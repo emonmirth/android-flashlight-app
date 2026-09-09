@@ -1066,6 +1066,12 @@ export const ANDROID_SUPPORT_FILES: AndroidFile[] = [
   { path: 'app/proguard-rules.pro', name: 'proguard-rules.pro', category: 'gradle', description: 'Release shrinker rules placeholder.', code: '# Add project-specific rules when minification is enabled.' },
   { path: 'app/src/main/res/drawable/ic_launcher.xml', name: 'ic_launcher.xml', category: 'resource', description: 'Temporary vector launcher icon.', code: `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#0C0D0E" android:pathData="M0,0h108v108h-108z"/><path android:fillColor="#FBBF24" android:pathData="M59,8L25,57h24l-2,43l36,-52h-25z"/></vector>` },
+  { path: 'app/src/main/res/drawable/ic_flashlight_notif.xml', name: 'ic_flashlight_notif.xml', category: 'resource', description: 'Notification icon.', code: `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M7,2v11h3v9l7,-12h-4l3,-8z"/></vector>` },
+  { path: 'app/src/main/res/drawable/ic_toggle.xml', name: 'ic_toggle.xml', category: 'resource', description: 'Toggle icon.', code: `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M17,7H7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5h10c2.76,0 5,-2.24 5,-5s-2.24,-5 -5,-5zM17,15c-1.66,0 -3,-1.34 -3,-3s1.34,-3 3,-3 3,1.34 3,3 -1.34,3 -3,3z"/></vector>` },
+  { path: 'app/src/main/res/drawable/ic_stop.xml', name: 'ic_stop.xml', category: 'resource', description: 'Stop icon.', code: `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M6,6h12v12H6z"/></vector>` },
   { path: 'app/src/main/java/com/flashlight/shake/ui/theme/Theme.kt', name: 'Theme.kt', category: 'kotlin', description: 'Compose Material 3 color theme.', code: `package com.flashlight.shake.ui.theme
 
 import androidx.compose.material3.MaterialTheme
