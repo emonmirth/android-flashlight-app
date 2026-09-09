@@ -1,0 +1,6 @@
+{
+  "name": "EonMirth Flashlight",
+  "description": "Privacy-first Android flashlight app and live simulator by EonMirth. Toggle the torch with a shake while keeping sensor data on-device.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
