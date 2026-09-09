@@ -8,8 +8,7 @@ export const ANDROID_FILES: AndroidFile[] = [
     description: 'Declares camera, foreground service, wake lock, sensor features, and the background service.',
     code: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.flashlight.shake">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Permissions for Camera Flashlight & Foreground Service -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -175,7 +174,8 @@ class ShakeFlashlightService : Service(), SensorEventListener {
                 updateNotification()
             }
             ACTION_UPDATE_SENSITIVITY -> {
-                val newSensitivity = intent.getFloatExtra(EXTRA_SENSITIVITY, shakeThresholdGForce)
+                val newSensitivity = intent?.getFloatExtra(EXTRA_SENSITIVITY, shakeThresholdGForce)
+                    ?: shakeThresholdGForce
                 shakeThresholdGForce = newSensitivity
                 Log.d(TAG, "Updated shake threshold: $shakeThresholdGForce G")
             }
