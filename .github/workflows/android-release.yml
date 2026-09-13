@@ -1,0 +1,78 @@
+name: Build Android APK & Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Export Android Project
+        run: bunx tsx scripts/export-android-project.ts
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build APK with Gradle
+        run: gradle -p android-project :app:assembleDebug
+
+      - name: Rename & Prepare APK
+        run: |
+          mkdir -p release-apk
+          cp android-project/app/build/outputs/apk/debug/app-debug.apk release-apk/Glim-debug.apk
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0-glim-${{ github.run_number }}
+          name: Glim v1.0.0 Build #${{ github.run_number }}
+          body: |
+            # Glim - Shake to Flashlight 🔦
+            
+            **Latest Debug APK Build**
+            
+            - Shake gesture to toggle flashlight
+            - Quick Settings tile integration
+            - Pocket protection via proximity sensor
+            - Material 3 Design
+            
+            **Installation:**
+            1. Download `Glim-debug.apk` from the assets below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Install the APK
+            4. Grant Camera and Notification permissions
+            5. Shake your phone to test!
+            
+            Build #${{ github.run_number }}
+          draft: false
+          prerelease: true
+          files: release-apk/Glim-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
