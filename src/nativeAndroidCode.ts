@@ -9,7 +9,7 @@ export const ANDROID_FILES: AndroidFile[] = [
     code: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.flashlight.shake">
+    >
 
     <!-- Permissions for Camera Flashlight & Foreground Service -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -39,7 +39,7 @@ export const ANDROID_FILES: AndroidFile[] = [
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ShakeFlashlight"
+        android:theme="@style/Theme.Glim"
         tools:targetApi="35">
 
         <!-- Main Compose Activity -->
@@ -47,7 +47,7 @@ export const ANDROID_FILES: AndroidFile[] = [
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.ShakeFlashlight">
+            android:theme="@style/Theme.Glim">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -56,7 +56,7 @@ export const ANDROID_FILES: AndroidFile[] = [
 
         <!-- Continuous Foreground Service for Shake Gestures -->
         <service
-            android:name=".service.ShakeFlashlightService"
+            android:name=".service.GlimService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
@@ -74,139 +74,313 @@ export const ANDROID_FILES: AndroidFile[] = [
             </intent-filter>
         </receiver>
 
+        <!-- Quick Settings Tile for fast toggle -->
+        <service
+            android:name=".service.GlimTileService"
+            android:icon="@drawable/ic_flashlight_notif"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true" />
+        </service>
+
     </application>
 </manifest>`
   },
   {
-    path: 'app/src/main/java/com/flashlight/shake/service/ShakeFlashlightService.kt',
-    name: 'ShakeFlashlightService.kt',
+    path: 'app/src/main/java/com/eonmirth/glim/core/feature/FeatureState.kt',
+    name: 'FeatureState.kt',
     category: 'kotlin',
-    description: 'Core Foreground Service keeping accelerometer & proximity listeners alive in the background/screen-off state.',
-    code: `package com.flashlight.shake.service
+    description: 'Feature state and identification models distinguishing Enabled, Disabled, Unsupported, and PermissionRequired states.',
+    code: `package com.eonmirth.glim.core.feature
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+enum class FeatureId(val displayName: String) {
+    SHAKE_FLASHLIGHT("Shake Flashlight")
+}
+
+enum class FeatureStatus {
+    ENABLED,
+    DISABLED,
+    UNSUPPORTED,
+    PERMISSION_REQUIRED,
+    LIMITED,
+    ERROR
+}
+
+data class FeatureState(
+    val id: FeatureId,
+    val status: FeatureStatus,
+    val message: String? = null
+)`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/hardware/HardwareCapabilities.kt',
+    name: 'HardwareCapabilities.kt',
+    category: 'kotlin',
+    description: 'Hardware capability detectors inspecting camera flash, accelerometer, and proximity sensor availability.',
+    code: `package com.eonmirth.glim.core.hardware
+
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
+
+object HardwareCapabilities {
+
+    fun hasCameraFlash(context: Context): Boolean {
+        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)
+    }
+
+    fun hasAccelerometer(context: Context): Boolean {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        return sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null
+    }
+
+    fun hasProximitySensor(context: Context): Boolean {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        return sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY) != null
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/permission/SmartPermissionManager.kt',
+    name: 'SmartPermissionManager.kt',
+    category: 'kotlin',
+    description: 'Centralized permission manager distinguishing critical (Camera) and optional (Notification) permissions.',
+    code: `package com.eonmirth.glim.core.permission
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
+import com.eonmirth.glim.core.feature.FeatureId
+
+object SmartPermissionManager {
+
+    fun hasCameraPermission(context: Context): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun hasNotificationPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Critical permissions strictly required to execute the feature.
+     * Shake -> Flashlight requires CAMERA to toggle the torch.
+     */
+    fun getCriticalPermissions(featureId: FeatureId): List<String> {
+        return when (featureId) {
+            FeatureId.SHAKE_FLASHLIGHT -> listOf(Manifest.permission.CAMERA)
+        }
+    }
+
+    /**
+     * Optional permissions that enhance the experience (e.g. visible foreground notification),
+     * but whose absence does not block the feature from operating.
+     */
+    fun getOptionalPermissions(featureId: FeatureId): List<String> {
+        return when (featureId) {
+            FeatureId.SHAKE_FLASHLIGHT -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    listOf(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    emptyList()
+                }
+            }
+        }
+    }
+
+    fun getMissingCriticalPermissions(context: Context, featureId: FeatureId): List<String> {
+        return getCriticalPermissions(featureId).filter { permission ->
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    /**
+     * Checks if all critical permissions required for the feature are granted.
+     * Notification permission denial does NOT prevent this from returning true.
+     */
+    fun isFeaturePermissionGranted(context: Context, featureId: FeatureId): Boolean {
+        return getMissingCriticalPermissions(context, featureId).isEmpty()
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/persistence/PreferencesManager.kt',
+    name: 'PreferencesManager.kt',
+    category: 'kotlin',
+    description: 'Persistent state boundary preserving backward-compatible SharedPreferences keys for service toggle and sensitivity.',
+    code: `package com.eonmirth.glim.core.persistence
+
+import android.content.Context
 import android.content.SharedPreferences
+
+class PreferencesManager(context: Context) {
+
+    companion object {
+        const val PREFS_NAME = "glim_prefs"
+        const val KEY_SERVICE_ENABLED = "service_enabled"
+        const val KEY_SENSITIVITY_G_FORCE = "sensitivity_g_force"
+        const val KEY_POCKET_PROTECTION = "pocket_protection_enabled"
+        const val KEY_AUTO_OFF_MINUTES = "auto_off_minutes"
+
+        const val DEFAULT_SENSITIVITY = 2.4f
+        const val DEFAULT_POCKET_PROTECTION = true
+        const val DEFAULT_AUTO_OFF = 3 // 3 minutes
+    }
+
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    var isGlimEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SERVICE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SERVICE_ENABLED, value).apply()
+
+    var sensitivityGForce: Float
+        get() = prefs.getFloat(KEY_SENSITIVITY_G_FORCE, DEFAULT_SENSITIVITY)
+        set(value) = prefs.edit().putFloat(KEY_SENSITIVITY_G_FORCE, value).apply()
+
+    var isPocketProtectionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_POCKET_PROTECTION, DEFAULT_POCKET_PROTECTION)
+        set(value) = prefs.edit().putBoolean(KEY_POCKET_PROTECTION, value).apply()
+
+    var autoOffMinutes: Int
+        get() = prefs.getInt(KEY_AUTO_OFF_MINUTES, DEFAULT_AUTO_OFF)
+        set(value) = prefs.edit().putInt(KEY_AUTO_OFF_MINUTES, value).apply()
+}
+`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/action/SmartAction.kt',
+    name: 'SmartAction.kt',
+    category: 'kotlin',
+    description: 'Action engine foundation defining ActionResult and ToggleFlashlightAction with permission safety and SecurityException handling.',
+    code: `package com.eonmirth.glim.core.action
+
+import android.content.Context
+import com.eonmirth.glim.camera.FlashlightController
+import com.eonmirth.glim.core.hardware.HardwareCapabilities
+import com.eonmirth.glim.core.permission.SmartPermissionManager
+
+sealed class ActionResult {
+    data class Success(val message: String, val timestamp: Long = System.currentTimeMillis()) : ActionResult()
+    data class Failure(val reason: String, val timestamp: Long = System.currentTimeMillis()) : ActionResult()
+    data class Unavailable(val reason: String, val timestamp: Long = System.currentTimeMillis()) : ActionResult()
+}
+
+interface SmartAction {
+    val actionId: String
+    fun execute(context: Context): ActionResult
+}
+
+class ToggleFlashlightAction(private val flashlightController: FlashlightController) : SmartAction {
+    override val actionId: String = "ACTION_TOGGLE_FLASHLIGHT"
+
+    override fun execute(context: Context): ActionResult {
+        if (!HardwareCapabilities.hasCameraFlash(context)) {
+            return ActionResult.Unavailable("Camera flash hardware unavailable on this device")
+        }
+
+        if (!SmartPermissionManager.hasCameraPermission(context)) {
+            return ActionResult.Failure("Camera permission was revoked. Flashlight cannot operate.")
+        }
+
+        return try {
+            val success = flashlightController.toggleTorch()
+            if (success) {
+                ActionResult.Success(
+                    if (flashlightController.isTorchOn) "Flashlight turned ON" else "Flashlight turned OFF"
+                )
+            } else {
+                ActionResult.Failure("Failed to toggle flashlight torch (Camera2 error or permission loss)")
+            }
+        } catch (e: SecurityException) {
+            ActionResult.Failure("Camera permission missing: " + (e.message ?: "SecurityException"))
+        } catch (e: Exception) {
+            ActionResult.Failure("Unexpected error toggling torch: " + (e.message ?: "Unknown error"))
+        }
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/sensor/SensorEngine.kt',
+    name: 'SensorEngine.kt',
+    category: 'kotlin',
+    description: 'Centralized sensor management with explicit lifecycle, encapsulating accelerometer listening and proximity pocket checks.',
+    code: `package com.eonmirth.glim.core.sensor
+
+import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
-import android.os.IBinder
-import android.os.PowerManager
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.flashlight.shake.MainActivity
-import com.flashlight.shake.R
-import com.flashlight.shake.camera.FlashlightController
 import kotlin.math.sqrt
 
-/**
- * Continuous Foreground Service that registers Sensor.TYPE_ACCELEROMETER
- * and Sensor.TYPE_PROXIMITY to safely toggle CameraManager torch mode.
- */
-class ShakeFlashlightService : Service(), SensorEventListener {
+interface SensorEventListenerCallback {
+    fun onShakeDetected(gForce: Float)
+    fun onPocketStateChanged(isInsidePocket: Boolean)
+}
+
+class SensorEngine(
+    private val context: Context,
+    private val callback: SensorEventListenerCallback
+) : SensorEventListener {
 
     companion object {
-        const val TAG = "ShakeFlashlightService"
-        const val CHANNEL_ID = "shake_flashlight_foreground"
-        const val NOTIFICATION_ID = 1001
-
-        const val ACTION_START = "ACTION_START"
-        const val ACTION_STOP = "ACTION_STOP"
-        const val ACTION_TOGGLE_TORCH = "ACTION_TOGGLE_TORCH"
-        const val ACTION_UPDATE_SENSITIVITY = "ACTION_UPDATE_SENSITIVITY"
-        const val EXTRA_SENSITIVITY = "EXTRA_SENSITIVITY"
-        const val PREFS_NAME = "shake_flashlight_prefs"
-
-        var isServiceRunning = false
-            private set
+        private const val TAG = "SensorEngine"
     }
 
-    private lateinit var sensorManager: SensorManager
-    private var accelerometer: Sensor? = null
-    private var proximitySensor: Sensor? = null
-    private lateinit var flashlightController: FlashlightController
-    private var wakeLock: PowerManager.WakeLock? = null
-    private lateinit var sharedPreferences: SharedPreferences
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val proximitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
 
-    // State tracking
-    private var isInsidePocket = false
-    private var shakeThresholdGForce = 2.4f // Default moderate sensitivity (in Gs)
-    private var lastShakeTimestamp: Long = 0
-    private val SHAKE_COOLDOWN_MS = 600L
+    var sensitivityThresholdGForce: Float = 2.4f
+    var isPocketProtectionEnabled: Boolean = true
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.d(TAG, "Service onCreate()")
-        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        shakeThresholdGForce = sharedPreferences.getFloat("sensitivity_g_force", 2.4f)
+    private var isInsidePocket: Boolean = false
+    private var isListening: Boolean = false
 
-        flashlightController = FlashlightController(this)
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+    fun startListening() {
+        if (isListening) return
 
-        createNotificationChannel()
-        acquireWakeLock()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: ACTION_START
-
-        when (action) {
-            ACTION_STOP -> {
-                Log.d(TAG, "Stopping foreground service")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            ACTION_TOGGLE_TORCH -> {
-                flashlightController.toggleTorch()
-                vibrateTactileFeedback()
-                updateNotification()
-            }
-            ACTION_UPDATE_SENSITIVITY -> {
-                val newSensitivity = intent.getFloatExtra(EXTRA_SENSITIVITY, shakeThresholdGForce)
-                shakeThresholdGForce = newSensitivity
-                Log.d(TAG, "Updated shake threshold: $shakeThresholdGForce G")
-            }
-            ACTION_START -> {
-                isServiceRunning = true
-                startForeground(NOTIFICATION_ID, buildForegroundNotification())
-                registerSensors()
-            }
-        }
-
-        return START_STICKY
-    }
-
-    private fun registerSensors() {
         accelerometer?.let {
-            sensorManager.registerListener(
-                this,
-                it,
-                SensorManager.SENSOR_DELAY_GAME
-            )
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
             Log.d(TAG, "Accelerometer registered with SENSOR_DELAY_GAME")
         }
 
-        proximitySensor?.let {
-            sensorManager.registerListener(
-                this,
-                it,
-                SensorManager.SENSOR_DELAY_NORMAL
-            )
-            Log.d(TAG, "Proximity Sensor registered")
+        if (isPocketProtectionEnabled) {
+            proximitySensor?.let {
+                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+                Log.d(TAG, "Proximity sensor registered")
+            }
         }
+
+        isListening = true
+    }
+
+    fun stopListening() {
+        if (!isListening) return
+        sensorManager.unregisterListener(this)
+        isListening = false
+        Log.d(TAG, "Sensor listeners unregistered")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -216,14 +390,16 @@ class ShakeFlashlightService : Service(), SensorEventListener {
             Sensor.TYPE_PROXIMITY -> {
                 val distance = event.values[0]
                 val maxRange = event.sensor.maximumRange
-                // If distance is less than max range (typically 0cm to 5cm), phone is covered or in pocket
-                isInsidePocket = distance < maxRange && distance < 4.0f
-                Log.d(TAG, "Proximity changed: distance=$distance, isInsidePocket=$isInsidePocket")
+                val newPocketState = distance < maxRange && distance < 4.0f
+                if (newPocketState != isInsidePocket) {
+                    isInsidePocket = newPocketState
+                    callback.onPocketStateChanged(isInsidePocket)
+                    Log.d(TAG, "Proximity changed: distance=$distance, isInsidePocket=$isInsidePocket")
+                }
             }
 
             Sensor.TYPE_ACCELEROMETER -> {
-                // If phone is in pocket or bag, ignore shake gestures
-                if (isInsidePocket) {
+                if (isPocketProtectionEnabled && isInsidePocket) {
                     return
                 }
 
@@ -231,69 +407,160 @@ class ShakeFlashlightService : Service(), SensorEventListener {
                 val y = event.values[1]
                 val z = event.values[2]
 
-                // Calculate vector magnitude in G-force units
                 val gX = x / SensorManager.GRAVITY_EARTH
                 val gY = y / SensorManager.GRAVITY_EARTH
                 val gZ = z / SensorManager.GRAVITY_EARTH
 
                 val gForce = sqrt((gX * gX + gY * gY + gZ * gZ).toDouble()).toFloat()
 
-                // Shake detection logic with cooldown debouncing
-                if (gForce >= shakeThresholdGForce) {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastShakeTimestamp > SHAKE_COOLDOWN_MS) {
-                        lastShakeTimestamp = currentTime
-                        Log.i(TAG, "Shake detected! G-force: $gForce >= $shakeThresholdGForce. Toggling torch.")
-                        handleShakeGesture()
-                    }
+                if (gForce >= sensitivityThresholdGForce) {
+                    callback.onShakeDetected(gForce)
                 }
             }
         }
     }
 
-    private fun handleShakeGesture() {
-        val newState = flashlightController.toggleTorch()
-        vibrateTactileFeedback()
-        updateNotification()
-    }
-
-    private fun vibrateTactileFeedback() {
-        val isTorchNowOn = flashlightController.isTorchOn
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            val vibrator = vibratorManager.defaultVibrator
-            val effect = if (isTorchNowOn) {
-                VibrationEffect.createWaveform(longArrayOf(0, 40, 50, 60), -1)
-            } else {
-                VibrationEffect.createOneShot(45, VibrationEffect.DEFAULT_AMPLITUDE)
-            }
-            vibrator.vibrate(effect)
-        } else {
-            @Suppress("DEPRECATION")
-            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(50)
-            }
-        }
-    }
-
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/safety/SafetyEngine.kt',
+    name: 'SafetyEngine.kt',
+    category: 'kotlin',
+    description: 'Safety abstraction ensuring debounce cooldown (600ms), pocket state suppression, and hardware validation.',
+    code: `package com.eonmirth.glim.core.safety
 
-    private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "ShakeFlashlight::SensorWakeLock"
-        ).apply {
-            setReferenceCounted(false)
-            acquire(10 * 60 * 1000L) // Safe partial wakelock
+import android.content.Context
+import android.util.Log
+import com.eonmirth.glim.core.hardware.HardwareCapabilities
+
+class SafetyEngine(
+    private val cooldownMs: Long = 600L
+) {
+    companion object {
+        private const val TAG = "SafetyEngine"
+    }
+
+    private var lastTriggerTimestamp: Long = 0
+
+    fun canExecuteShakeAction(
+        context: Context,
+        isInsidePocket: Boolean,
+        pocketProtectionEnabled: Boolean
+    ): Boolean {
+        if (pocketProtectionEnabled && isInsidePocket) {
+            Log.d(TAG, "Action suppressed: Device is inside pocket")
+            return false
+        }
+
+        if (!HardwareCapabilities.hasCameraFlash(context)) {
+            Log.w(TAG, "Action blocked: Device lacks camera flash")
+            return false
+        }
+
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastTriggerTimestamp < cooldownMs) {
+            Log.d(TAG, "Action blocked: In cooldown period")
+            return false
+        }
+
+        lastTriggerTimestamp = currentTime
+        return true
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/rule/SmartRule.kt',
+    name: 'SmartRule.kt',
+    category: 'kotlin',
+    description: 'Rule engine foundation modeling Trigger -> SafetyCheck -> Action execution.',
+    code: `package com.eonmirth.glim.core.rule
+
+import android.content.Context
+import com.eonmirth.glim.core.action.ActionResult
+import com.eonmirth.glim.core.action.SmartAction
+import com.eonmirth.glim.core.feature.FeatureId
+
+data class SmartRule(
+    val id: String,
+    val featureId: FeatureId,
+    val triggerName: String,
+    val action: SmartAction
+) {
+    fun evaluateAndExecute(context: Context, isAllowedBySafety: Boolean): ActionResult {
+        if (!isAllowedBySafety) {
+            return ActionResult.Unavailable("Action blocked by safety check")
+        }
+        return action.execute(context)
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/log/ActivityLogManager.kt',
+    name: 'ActivityLogManager.kt',
+    category: 'kotlin',
+    description: 'Lightweight in-memory activity and event logger capped at 50 events without storage or battery penalties.',
+    code: `package com.eonmirth.glim.core.log
+
+import com.eonmirth.glim.core.feature.FeatureId
+import java.util.concurrent.CopyOnWriteArrayList
+
+data class SmartLogEvent(
+    val id: Long = System.currentTimeMillis(),
+    val timestamp: Long = System.currentTimeMillis(),
+    val featureId: FeatureId,
+    val eventType: String,
+    val description: String,
+    val isSuccess: Boolean
+)
+
+object ActivityLogManager {
+    private const val MAX_LOG_SIZE = 50
+    private val logEvents = CopyOnWriteArrayList<SmartLogEvent>()
+
+    fun log(featureId: FeatureId, eventType: String, description: String, isSuccess: Boolean = true) {
+        val event = SmartLogEvent(
+            featureId = featureId,
+            eventType = eventType,
+            description = description,
+            isSuccess = isSuccess
+        )
+        logEvents.add(0, event)
+        while (logEvents.size > MAX_LOG_SIZE) {
+            logEvents.removeAt(logEvents.size - 1)
         }
     }
 
-    private fun createNotificationChannel() {
+    fun getRecentEvents(): List<SmartLogEvent> = logEvents.toList()
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/core/notification/SmartNotificationManager.kt',
+    name: 'SmartNotificationManager.kt',
+    category: 'kotlin',
+    description: 'Encapsulates foreground service notification channels, PendingIntents, and error-safe notification updates.',
+    code: `package com.eonmirth.glim.core.notification
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import com.eonmirth.glim.MainActivity
+import com.eonmirth.glim.R
+import com.eonmirth.glim.service.GlimService
+
+class SmartNotificationManager(private val context: Context) {
+
+    companion object {
+        const val CHANNEL_ID = "shake_flashlight_foreground"
+        const val NOTIFICATION_ID = 1001
+    }
+
+    fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -303,84 +570,72 @@ class ShakeFlashlightService : Service(), SensorEventListener {
                 description = "Keeps shake-to-activate flashlight gesture active in the background"
                 setShowBadge(false)
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
         }
     }
 
-    private fun buildForegroundNotification(): Notification {
-        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+    fun buildForegroundNotification(isTorchOn: Boolean, hasPermissionError: Boolean = false): Notification {
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val openAppPendingIntent = PendingIntent.getActivity(
-            this, 0, openAppIntent,
+            context, 0, openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val toggleIntent = Intent(this, ShakeFlashlightService::class.java).apply {
-            action = ACTION_TOGGLE_TORCH
+        val toggleIntent = Intent(context, GlimService::class.java).apply {
+            action = GlimService.ACTION_TOGGLE_TORCH
         }
         val togglePendingIntent = PendingIntent.getService(
-            this, 1, toggleIntent,
+            context, 1, toggleIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val stopIntent = Intent(this, ShakeFlashlightService::class.java).apply {
-            action = ACTION_STOP
+        val stopIntent = Intent(context, GlimService::class.java).apply {
+            action = GlimService.ACTION_STOP
         }
         val stopPendingIntent = PendingIntent.getService(
-            this, 2, stopIntent,
+            context, 2, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val isTorchOn = flashlightController.isTorchOn
-        val statusText = if (isTorchOn) "Flashlight is ON • Shake to turn off" else "Shake device to turn flashlight ON"
+        val statusText = when {
+            hasPermissionError -> "Camera permission revoked • Tap to restore"
+            isTorchOn -> "Flashlight is ON • Shake to turn off"
+            else -> "Shake device to turn flashlight ON"
+        }
         val toggleActionTitle = if (isTorchOn) "Turn Off" else "Turn On"
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Shake Flashlight Active")
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_flashlight_notif)
             .setOngoing(true)
             .setContentIntent(openAppPendingIntent)
-            .addAction(R.drawable.ic_toggle, toggleActionTitle, togglePendingIntent)
-            .addAction(R.drawable.ic_stop, "Stop Service", stopPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
-    }
 
-    private fun updateNotification() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildForegroundNotification())
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d(TAG, "Service onDestroy()")
-        isServiceRunning = false
-        sensorManager.unregisterListener(this)
-        flashlightController.setTorchMode(false)
-        flashlightController.release()
-
-        try {
-            if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing wakelock", e)
+        if (!hasPermissionError) {
+            builder.addAction(R.drawable.ic_toggle, toggleActionTitle, togglePendingIntent)
         }
+        builder.addAction(R.drawable.ic_stop, "Stop Service", stopPendingIntent)
+
+        return builder.build()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    fun updateNotification(isTorchOn: Boolean, hasPermissionError: Boolean = false) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildForegroundNotification(isTorchOn, hasPermissionError))
+    }
 }`
   },
   {
-    path: 'app/src/main/java/com/flashlight/shake/camera/FlashlightController.kt',
+    path: 'app/src/main/java/com/eonmirth/glim/camera/FlashlightController.kt',
     name: 'FlashlightController.kt',
     category: 'kotlin',
-    description: 'Hardware CameraManager wrapper managing torch callbacks, camera ID lookup, and state flows.',
-    code: `package com.flashlight.shake.camera
+    description: 'Hardware CameraManager wrapper with robust SecurityException and CameraAccessException handling.',
+    code: `package com.eonmirth.glim.camera
 
 import android.content.Context
 import android.hardware.camera2.CameraAccessException
@@ -429,7 +684,13 @@ class FlashlightController(private val context: Context) {
 
     init {
         findFlashCameraId()
-        cameraManager.registerTorchCallback(torchCallback, null)
+        try {
+            cameraManager.registerTorchCallback(torchCallback, null)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException registering torch callback", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception registering torch callback", e)
+        }
     }
 
     private fun findFlashCameraId() {
@@ -460,7 +721,11 @@ class FlashlightController(private val context: Context) {
                 }
             }
         } catch (e: CameraAccessException) {
-            Log.e(TAG, "Failed to inspect camera IDs", e)
+            Log.e(TAG, "Failed to inspect camera IDs: CameraAccessException", e)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Failed to inspect camera IDs: SecurityException (Camera permission revoked)", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error inspecting camera IDs", e)
         }
     }
 
@@ -485,6 +750,10 @@ class FlashlightController(private val context: Context) {
         } catch (e: IllegalArgumentException) {
             Log.e(TAG, "IllegalArgumentException toggling torch", e)
             false
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException while setting torch mode to $enabled: Camera permission revoked", e)
+            _isTorchOn.value = false
+            false
         }
     }
 
@@ -494,23 +763,372 @@ class FlashlightController(private val context: Context) {
     }
 
     fun release() {
-        cameraManager.unregisterTorchCallback(torchCallback)
+        try {
+            cameraManager.unregisterTorchCallback(torchCallback)
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception unregistering torch callback", e)
+        }
     }
 }`
   },
   {
-    path: 'app/src/main/java/com/flashlight/shake/MainActivity.kt',
-    name: 'MainActivity.kt',
+    path: 'app/src/main/java/com/eonmirth/glim/service/GlimService.kt',
+    name: 'GlimService.kt',
     category: 'kotlin',
-    description: 'Modern Jetpack Compose UI with Material 3 switch, sensitivity slider, and permission workflows.',
-    code: `package com.flashlight.shake
+    description: 'Core Foreground Service keeping accelerometer & proximity listeners alive, with permission loss protection.',
+    code: `package com.eonmirth.glim.service
 
-import android.Manifest
+import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.util.Log
+import com.eonmirth.glim.camera.FlashlightController
+import com.eonmirth.glim.core.action.ActionResult
+import com.eonmirth.glim.core.action.ToggleFlashlightAction
+import com.eonmirth.glim.core.feature.FeatureId
+import com.eonmirth.glim.core.log.ActivityLogManager
+import com.eonmirth.glim.core.notification.SmartNotificationManager
+import com.eonmirth.glim.core.permission.SmartPermissionManager
+import com.eonmirth.glim.core.persistence.PreferencesManager
+import com.eonmirth.glim.core.rule.SmartRule
+import com.eonmirth.glim.core.safety.SafetyEngine
+import com.eonmirth.glim.core.sensor.SensorEngine
+import com.eonmirth.glim.core.sensor.SensorEventListenerCallback
+
+/**
+ * Continuous Foreground Service keeping accelerometer & proximity listeners alive
+ * in the background/screen-off state, powered by the Smart Actions Foundation.
+ */
+class GlimService : Service(), SensorEventListenerCallback {
+
+    companion object {
+        const val TAG = "GlimService"
+        const val CHANNEL_ID = SmartNotificationManager.CHANNEL_ID
+        const val NOTIFICATION_ID = SmartNotificationManager.NOTIFICATION_ID
+
+        const val ACTION_START = "ACTION_START"
+        const val ACTION_STOP = "ACTION_STOP"
+        const val ACTION_TOGGLE_TORCH = "ACTION_TOGGLE_TORCH"
+        const val ACTION_UPDATE_SENSITIVITY = "ACTION_UPDATE_SENSITIVITY"
+        const val EXTRA_SENSITIVITY = "EXTRA_SENSITIVITY"
+        const val PREFS_NAME = PreferencesManager.PREFS_NAME
+
+        var isServiceRunning = false
+            private set
+    }
+
+    private lateinit var preferencesManager: PreferencesManager
+    private lateinit var flashlightController: FlashlightController
+    private lateinit var notificationManager: SmartNotificationManager
+    private lateinit var safetyEngine: SafetyEngine
+    private lateinit var toggleAction: ToggleFlashlightAction
+    private lateinit var smartRule: SmartRule
+    private lateinit var sensorEngine: SensorEngine
+
+    private val autoOffHandler = Handler(Looper.getMainLooper())
+    private val autoOffRunnable = Runnable {
+        if (flashlightController.isTorchOn) {
+            Log.d(TAG, "Auto-off timer triggered. Turning off torch.")
+            flashlightController.setTorchMode(false)
+            notificationManager.updateNotification(false)
+            ActivityLogManager.log(
+                FeatureId.SHAKE_FLASHLIGHT,
+                "AUTO_OFF",
+                "Flashlight turned off by auto-off timer",
+                true
+            )
+        }
+    }
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var isInsidePocket = false
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "Service onCreate()")
+
+        preferencesManager = PreferencesManager(this)
+        flashlightController = FlashlightController(this)
+        notificationManager = SmartNotificationManager(this)
+        notificationManager.createNotificationChannel()
+
+        safetyEngine = SafetyEngine(cooldownMs = 600L)
+        toggleAction = ToggleFlashlightAction(flashlightController)
+        smartRule = SmartRule("RULE_SHAKE_FLASHLIGHT", FeatureId.SHAKE_FLASHLIGHT, "Shake", toggleAction)
+
+        sensorEngine = SensorEngine(this, this).apply {
+            sensitivityThresholdGForce = preferencesManager.sensitivityGForce
+            isPocketProtectionEnabled = preferencesManager.isPocketProtectionEnabled
+        }
+
+        acquireWakeLock()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action ?: ACTION_START
+
+        when (action) {
+            ACTION_STOP -> {
+                Log.d(TAG, "Stopping foreground service")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_TOGGLE_TORCH -> {
+                val result = toggleAction.execute(this)
+                if (result is ActionResult.Success) {
+                    vibrateTactileFeedback()
+                    notificationManager.updateNotification(flashlightController.isTorchOn)
+                    ActivityLogManager.log(
+                        FeatureId.SHAKE_FLASHLIGHT,
+                        "NOTIFICATION_TOGGLE",
+                        "Flashlight toggled from notification action",
+                        true
+                    )
+                    manageAutoOffTimer()
+                } else {
+                    val errorReason = (result as? ActionResult.Failure)?.reason
+                        ?: (result as? ActionResult.Unavailable)?.reason
+                        ?: "Operation failed"
+                    Log.e(TAG, "Notification torch toggle failed: $errorReason")
+                    val isPermRevoked = !SmartPermissionManager.hasCameraPermission(this)
+                    notificationManager.updateNotification(
+                        isTorchOn = false,
+                        hasPermissionError = isPermRevoked
+                    )
+                    ActivityLogManager.log(
+                        FeatureId.SHAKE_FLASHLIGHT,
+                        "ACTION_FAILED",
+                        "Notification toggle failed: $errorReason",
+                        false
+                    )
+                }
+            }
+            ACTION_UPDATE_SENSITIVITY -> {
+                val newSensitivity = intent?.getFloatExtra(EXTRA_SENSITIVITY, preferencesManager.sensitivityGForce)
+                    ?: preferencesManager.sensitivityGForce
+                sensorEngine.sensitivityThresholdGForce = newSensitivity
+                preferencesManager.sensitivityGForce = newSensitivity
+                Log.d(TAG, "Updated shake threshold: $newSensitivity G")
+            }
+            ACTION_START -> {
+                if (!SmartPermissionManager.hasCameraPermission(this)) {
+                    Log.e(TAG, "Cannot start foreground service: Camera permission missing or revoked")
+                    ActivityLogManager.log(
+                        FeatureId.SHAKE_FLASHLIGHT,
+                        "START_FAILED",
+                        "Cannot start service: Camera permission revoked",
+                        false
+                    )
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                isServiceRunning = true
+                startForeground(NOTIFICATION_ID, notificationManager.buildForegroundNotification(flashlightController.isTorchOn))
+                sensorEngine.startListening()
+                ActivityLogManager.log(
+                    FeatureId.SHAKE_FLASHLIGHT,
+                    "SERVICE_START",
+                    "Shake flashlight background monitoring started",
+                    true
+                )
+            }
+        }
+
+        return START_STICKY
+    }
+
+    override fun onPocketStateChanged(isInsidePocket: Boolean) {
+        this.isInsidePocket = isInsidePocket
+    }
+
+    override fun onShakeDetected(gForce: Float) {
+        val isAllowed = safetyEngine.canExecuteShakeAction(
+            context = this,
+            isInsidePocket = isInsidePocket,
+            pocketProtectionEnabled = preferencesManager.isPocketProtectionEnabled
+        )
+
+        if (isAllowed) {
+            Log.i(TAG, "Shake detected! G-force: $gForce. Executing flashlight rule.")
+            val result = smartRule.evaluateAndExecute(this, true)
+            if (result is ActionResult.Success) {
+                vibrateTactileFeedback()
+                notificationManager.updateNotification(flashlightController.isTorchOn)
+                ActivityLogManager.log(
+                    FeatureId.SHAKE_FLASHLIGHT,
+                    "SHAKE_TRIGGER",
+                    "Shake detected ($gForce G) -> Flashlight toggled",
+                    true
+                )
+                manageAutoOffTimer()
+            } else {
+                val errorReason = (result as? ActionResult.Failure)?.reason
+                    ?: (result as? ActionResult.Unavailable)?.reason
+                    ?: "Operation failed"
+                Log.e(TAG, "Shake trigger action failed: $errorReason")
+                val isPermRevoked = !SmartPermissionManager.hasCameraPermission(this)
+                notificationManager.updateNotification(
+                    isTorchOn = false,
+                    hasPermissionError = isPermRevoked
+                )
+                ActivityLogManager.log(
+                    FeatureId.SHAKE_FLASHLIGHT,
+                    "ACTION_FAILED",
+                    "Shake detected but torch failed: $errorReason",
+                    false
+                )
+            }
+        }
+    }
+
+    private fun vibrateTactileFeedback() {
+        val isTorchNowOn = flashlightController.isTorchOn
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            val vibrator = vibratorManager.defaultVibrator
+            val effect = if (isTorchNowOn) {
+                VibrationEffect.createWaveform(longArrayOf(0, 40, 50, 60), -1)
+            } else {
+                VibrationEffect.createOneShot(45, VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+            vibrator.vibrate(effect)
+        } else {
+            @Suppress("DEPRECATION")
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(50)
+            }
+        }
+    }
+
+    private fun manageAutoOffTimer() {
+        autoOffHandler.removeCallbacks(autoOffRunnable)
+        if (flashlightController.isTorchOn) {
+            val minutes = preferencesManager.autoOffMinutes
+            if (minutes > 0) {
+                Log.d(TAG, "Starting auto-off timer: $minutes minutes")
+                autoOffHandler.postDelayed(autoOffRunnable, minutes * 60 * 1000L)
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "Glim::SensorWakeLock"
+        ).apply {
+            setReferenceCounted(false)
+            acquire(10 * 60 * 1000L) // Safe partial wakelock
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "Service onDestroy()")
+        isServiceRunning = false
+        autoOffHandler.removeCallbacks(autoOffRunnable)
+        sensorEngine.stopListening()
+        flashlightController.setTorchMode(false)
+        flashlightController.release()
+
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing wakelock", e)
+        }
+
+        ActivityLogManager.log(
+            FeatureId.SHAKE_FLASHLIGHT,
+            "SERVICE_STOP",
+            "Shake flashlight service stopped",
+            true
+        )
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/service/GlimTileService.kt',
+    name: 'GlimTileService.kt',
+    category: 'kotlin',
+    description: 'Quick Settings Tile for toggling the Glim background service.',
+    code: `package com.eonmirth.glim.service
+
+import android.content.Intent
+import android.os.Build
+import android.service.quicksettings.Tile
+import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
+import com.eonmirth.glim.core.persistence.PreferencesManager
+
+class GlimTileService : TileService() {
+
+    override fun onStartListening() {
+        super.onStartListening()
+        updateTile()
+    }
+
+    override fun onClick() {
+        super.onClick()
+        val prefs = PreferencesManager(this)
+        val newState = !prefs.isGlimEnabled
+        prefs.isGlimEnabled = newState
+
+        if (newState) {
+            val intent = Intent(this, GlimService::class.java).apply {
+                action = GlimService.ACTION_START
+            }
+            ContextCompat.startForegroundService(this, intent)
+        } else {
+            val intent = Intent(this, GlimService::class.java).apply {
+                action = GlimService.ACTION_STOP
+            }
+            startService(intent)
+        }
+        updateTile()
+    }
+
+    private fun updateTile() {
+        val tile = qsTile ?: return
+        val prefs = PreferencesManager(this)
+        val isEnabled = prefs.isGlimEnabled
+
+        tile.state = if (isEnabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            tile.subtitle = if (isEnabled) "Shake active" else "Shake paused"
+        }
+        tile.updateTile()
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/MainActivity.kt',
+    name: 'MainActivity.kt',
+    category: 'kotlin',
+    description: 'Jetpack Compose UI with feature-triggered permission workflows and graceful notification permission handling.',
+    code: `package com.eonmirth.glim
+
+import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -521,106 +1139,196 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import com.flashlight.shake.service.ShakeFlashlightService
-import com.flashlight.shake.ui.ShakeFlashlightScreen
-import com.flashlight.shake.ui.theme.ShakeFlashlightTheme
+import com.eonmirth.glim.core.feature.FeatureId
+import com.eonmirth.glim.core.feature.FeatureState
+import com.eonmirth.glim.core.feature.FeatureStatus
+import com.eonmirth.glim.core.hardware.HardwareCapabilities
+import com.eonmirth.glim.core.permission.SmartPermissionManager
+import com.eonmirth.glim.core.persistence.PreferencesManager
+import com.eonmirth.glim.service.GlimService
+import com.eonmirth.glim.ui.GlimScreen
+import com.eonmirth.glim.ui.theme.GlimTheme
 
 class MainActivity : ComponentActivity() {
 
+    private lateinit var preferencesManager: PreferencesManager
+    private var isServiceRunning by mutableStateOf(false)
+    private var hasCameraPermission by mutableStateOf(false)
+    private var hasNotificationPermission by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        preferencesManager = PreferencesManager(this)
+        isServiceRunning = GlimService.isServiceRunning
+        hasCameraPermission = SmartPermissionManager.hasCameraPermission(this)
+        hasNotificationPermission = SmartPermissionManager.hasNotificationPermission(this)
 
         setContent {
-            ShakeFlashlightTheme {
+            GlimTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var hasCameraPermission by remember {
-                        mutableStateOf(
-                            ContextCompat.checkSelfPermission(
-                                this@MainActivity,
-                                Manifest.permission.CAMERA
-                            ) == PackageManager.PERMISSION_GRANTED
-                        )
-                    }
+                    val hasCameraFlash = remember { HardwareCapabilities.hasCameraFlash(this@MainActivity) }
 
-                    var hasNotificationPermission by remember {
-                        mutableStateOf(
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                ContextCompat.checkSelfPermission(
-                                    this@MainActivity,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) == PackageManager.PERMISSION_GRANTED
-                            } else true
-                        )
-                    }
-
-                    val requestPermissionLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.RequestMultiplePermissions()
-                    ) { permissions ->
-                        hasCameraPermission = permissions[Manifest.permission.CAMERA] ?: hasCameraPermission
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            hasNotificationPermission = permissions[Manifest.permission.POST_NOTIFICATIONS]
-                                ?: hasNotificationPermission
-                        }
-                    }
-
-                    LaunchedEffect(Unit) {
-                        val permissionsNeeded = mutableListOf<String>()
-                        if (!hasCameraPermission) permissionsNeeded.add(Manifest.permission.CAMERA)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                            permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                        if (permissionsNeeded.isNotEmpty()) {
-                            requestPermissionLauncher.launch(permissionsNeeded.toTypedArray())
-                        }
-                    }
-
-                    ShakeFlashlightScreen(
-                        isServiceRunning = ShakeFlashlightService.isServiceRunning,
-                        onToggleService = { enable ->
-                            getSharedPreferences(ShakeFlashlightService.PREFS_NAME, Context.MODE_PRIVATE)
-                                .edit().putBoolean("service_enabled", enable).apply()
-                            val intent = Intent(this@MainActivity, ShakeFlashlightService::class.java).apply {
-                                action = if (enable) ShakeFlashlightService.ACTION_START else ShakeFlashlightService.ACTION_STOP
+                    // Feature state computation: notification denial results in LIMITED, not blocked
+                    val featureState = remember(isServiceRunning, hasCameraFlash, hasCameraPermission, hasNotificationPermission, preferencesManager.isGlimEnabled) {
+                        when {
+                            !hasCameraFlash -> FeatureState(
+                                FeatureId.SHAKE_FLASHLIGHT,
+                                FeatureStatus.UNSUPPORTED,
+                                "Camera flash hardware is not available on this device"
+                            )
+                            !hasCameraPermission && preferencesManager.isGlimEnabled -> FeatureState(
+                                FeatureId.SHAKE_FLASHLIGHT,
+                                FeatureStatus.PERMISSION_REQUIRED,
+                                "Camera permission is required to operate the flashlight"
+                            )
+                            isServiceRunning || preferencesManager.isGlimEnabled -> {
+                                if (!hasNotificationPermission) {
+                                    FeatureState(
+                                        FeatureId.SHAKE_FLASHLIGHT,
+                                        FeatureStatus.LIMITED,
+                                        "Shake detection active • Notifications disabled (foreground status is hidden)"
+                                    )
+                                } else {
+                                    FeatureState(
+                                        FeatureId.SHAKE_FLASHLIGHT,
+                                        FeatureStatus.ENABLED,
+                                        "Shake detection active in foreground and background"
+                                    )
+                                }
                             }
+                            else -> FeatureState(
+                                FeatureId.SHAKE_FLASHLIGHT,
+                                FeatureStatus.DISABLED,
+                                "Shake detection paused"
+                            )
+                        }
+                    }
+
+                    // Permission launcher: only CAMERA is critical. Notification denial does not block feature.
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestMultiplePermissions()
+                    ) { _ ->
+                        val cameraGranted = SmartPermissionManager.hasCameraPermission(this@MainActivity)
+                        val notifGranted = SmartPermissionManager.hasNotificationPermission(this@MainActivity)
+                        hasCameraPermission = cameraGranted
+                        hasNotificationPermission = notifGranted
+
+                        if (cameraGranted) {
+                            preferencesManager.isGlimEnabled = true
+                            startShakeService()
+                            isServiceRunning = true
+                            if (!notifGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Shake Flashlight enabled. Notifications are disabled, so foreground status is hidden.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } else {
+                            preferencesManager.isGlimEnabled = false
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Camera permission is required to operate the flashlight torch",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+
+                    GlimScreen(
+                        featureState = featureState,
+                        isServiceRunning = isServiceRunning,
+                        initialSensitivity = preferencesManager.sensitivityGForce,
+                        initialPocketProtection = preferencesManager.isPocketProtectionEnabled,
+                        initialAutoOffMinutes = preferencesManager.autoOffMinutes,
+                        onRequestPermissions = {
+                            val perms = mutableListOf(Manifest.permission.CAMERA)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                            permissionLauncher.launch(perms.toTypedArray())
+                        },
+                        onToggleService = { enable ->
                             if (enable) {
-                                ContextCompat.startForegroundService(this@MainActivity, intent)
+                                if (!hasCameraPermission) {
+                                    val perms = mutableListOf(Manifest.permission.CAMERA)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                        perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    permissionLauncher.launch(perms.toTypedArray())
+                                } else {
+                                    preferencesManager.isGlimEnabled = true
+                                    startShakeService()
+                                    isServiceRunning = true
+                                }
                             } else {
-                                startService(intent)
+                                preferencesManager.isGlimEnabled = false
+                                stopShakeService()
+                                isServiceRunning = false
                             }
                         },
                         onUpdateSensitivity = { sensitivityG ->
-                            val prefs = getSharedPreferences(ShakeFlashlightService.PREFS_NAME, Context.MODE_PRIVATE)
-                            prefs.edit().putFloat("sensitivity_g_force", sensitivityG).apply()
-
-                            if (ShakeFlashlightService.isServiceRunning) {
-                                val intent = Intent(this@MainActivity, ShakeFlashlightService::class.java).apply {
-                                    action = ShakeFlashlightService.ACTION_UPDATE_SENSITIVITY
-                                    putExtra(ShakeFlashlightService.EXTRA_SENSITIVITY, sensitivityG)
+                            preferencesManager.sensitivityGForce = sensitivityG
+                            if (GlimService.isServiceRunning) {
+                                val intent = Intent(this@MainActivity, GlimService::class.java).apply {
+                                    action = GlimService.ACTION_UPDATE_SENSITIVITY
+                                    putExtra(GlimService.EXTRA_SENSITIVITY, sensitivityG)
                                 }
                                 startService(intent)
                             }
+                        },
+                        onTogglePocketProtection = { enable ->
+                            preferencesManager.isPocketProtectionEnabled = enable
+                        },
+                        onUpdateAutoOff = { minutes ->
+                            preferencesManager.autoOffMinutes = minutes
                         }
                     )
                 }
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        hasCameraPermission = SmartPermissionManager.hasCameraPermission(this)
+        hasNotificationPermission = SmartPermissionManager.hasNotificationPermission(this)
+
+        // If camera permission was revoked while backgrounded, stop service safely
+        // and immediately refresh the visible feature state.
+        if (!hasCameraPermission && preferencesManager.isGlimEnabled) {
+            stopShakeService()
+            isServiceRunning = false
+        }
+    }
+
+    private fun startShakeService() {
+        val intent = Intent(this, GlimService::class.java).apply {
+            action = GlimService.ACTION_START
+        }
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun stopShakeService() {
+        val intent = Intent(this, GlimService::class.java).apply {
+            action = GlimService.ACTION_STOP
+        }
+        startService(intent)
+    }
 }`
   },
   {
-    path: 'app/src/main/java/com/flashlight/shake/ui/ShakeFlashlightScreen.kt',
-    name: 'ShakeFlashlightScreen.kt',
+    path: 'app/src/main/java/com/eonmirth/glim/ui/GlimScreen.kt',
+    name: 'GlimScreen.kt',
     category: 'kotlin',
-    description: 'Jetpack Compose Screen implementing the Material 3 UI: Torch Hero Graphic, Master Switch, Sensitivity Slider, and Pocket Protection card.',
-    code: `package com.flashlight.shake.ui
+    description: 'Jetpack Compose Screen implementing UI with honest status reporting for Limited (notifications disabled) and Permission Required.',
+    code: `package com.eonmirth.glim.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -629,54 +1337,59 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.eonmirth.glim.core.feature.FeatureState
+import com.eonmirth.glim.core.feature.FeatureStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShakeFlashlightScreen(
+fun GlimScreen(
+    featureState: FeatureState,
     isServiceRunning: Boolean,
+    initialSensitivity: Float = 2.4f,
+    initialPocketProtection: Boolean = true,
+    initialAutoOffMinutes: Int = 3,
+    onRequestPermissions: () -> Unit,
     onToggleService: (Boolean) -> Unit,
-    onUpdateSensitivity: (Float) -> Unit
+    onUpdateSensitivity: (Float) -> Unit,
+    onTogglePocketProtection: (Boolean) -> Unit = {},
+    onUpdateAutoOff: (Int) -> Unit = {}
 ) {
-    var serviceEnabled by remember { mutableStateOf(isServiceRunning) }
-    var sensitivitySlider by remember { mutableStateOf(2.4f) } // 1.4f (Sensitive) to 4.0f (Firm)
-    var isPocketProtectionEnabled by remember { mutableStateOf(true) }
+    val isEnabled = featureState.status == FeatureStatus.ENABLED || featureState.status == FeatureStatus.LIMITED
+    val isUnsupported = featureState.status == FeatureStatus.UNSUPPORTED
+    val isPermissionRequired = featureState.status == FeatureStatus.PERMISSION_REQUIRED
+    val isLimited = featureState.status == FeatureStatus.LIMITED
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow"
-    )
+    var sensitivitySlider by remember { mutableStateOf(initialSensitivity) }
+    var isPocketProtectionEnabled by remember { mutableStateOf(initialPocketProtection) }
+    var autoOffMinutes by remember { mutableStateOf(initialAutoOffMinutes) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "Shake Flashlight",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        "Glim",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        letterSpacing = 1.sp
                     )
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -686,230 +1399,216 @@ fun ShakeFlashlightScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
 
-            // Central Torch Visual Indicator
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .size(170.dp)
-            ) {
-                if (serviceEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .size(160.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFFFFD54F).copy(alpha = glowAlpha),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (serviceEnabled) Color(0xFFFFC107) else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FlashOn,
-                        contentDescription = "Flashlight Status",
-                        modifier = Modifier.size(54.dp),
-                        tint = if (serviceEnabled) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Master Service Switch Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (serviceEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                )
+            // Main Toggle Card (Material 3 style)
+            Surface(
+                onClick = { if (!isUnsupported) onToggleService(!isEnabled) },
+                shape = RoundedCornerShape(28.dp),
+                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .padding(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FlashOn,
+                            contentDescription = null,
+                            tint = if (isEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(20.dp))
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (serviceEnabled) "Shake Detection Active" else "Shake Detection Paused",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                            text = if (isEnabled) "Active" else "Paused",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (serviceEnabled) "Foreground Service listening for shake gestures" else "Turn on to listen in background and screen-off",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Shake to toggle flashlight",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
                     Switch(
-                        checked = serviceEnabled,
-                        onCheckedChange = { checked ->
-                            serviceEnabled = checked
-                            onToggleService(checked)
-                        }
+                        checked = isEnabled,
+                        enabled = !isUnsupported,
+                        onCheckedChange = { onToggleService(it) }
                     )
                 }
             }
 
-            // Sensitivity Adjustment Slider Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
+            // Status Info
+            if (isUnsupported) {
+                StatusBanner(
+                    icon = Icons.Default.Warning,
+                    message = featureState.message ?: "Hardware not supported",
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            } else if (isPermissionRequired) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Vibration,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Shake Sensitivity",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text("Permission Required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Camera access is needed to use the flash.", style = MaterialTheme.typography.bodySmall)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = onRequestPermissions) {
+                            Text("Grant Permission")
                         }
-
-                        val presetLabel = when {
-                            sensitivitySlider < 2.0f -> "Gentle"
-                            sensitivitySlider < 3.0f -> "Balanced"
-                            else -> "Firm"
-                        }
-                        SuggestionChip(
-                            onClick = {},
-                            label = { Text(presetLabel, fontSize = 12.sp) }
-                        )
                     }
+                }
+            }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+            // Settings Section
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
 
-                    Slider(
-                        value = sensitivitySlider,
-                        onValueChange = { value ->
-                            sensitivitySlider = value
-                            onUpdateSensitivity(value)
-                        },
-                        valueRange = 1.4f..3.8f,
-                        steps = 11
-                    )
+                // Sensitivity
+                SettingCard {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Vibration, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Shake Sensitivity", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Slider(
+                            value = sensitivitySlider,
+                            onValueChange = { sensitivitySlider = it; onUpdateSensitivity(it) },
+                            valueRange = 1.4f..3.8f,
+                            steps = 11
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Light", style = MaterialTheme.typography.labelSmall)
+                            Text(String.format("%.1f G", sensitivitySlider), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text("Firm", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
 
+                // Auto-off Timer
+                SettingCard {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Gentle (Light shake)", style = MaterialTheme.typography.labelSmall)
-                        Text(String.format("%.1f G", sensitivitySlider), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Text("Firm (Strong shake)", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Auto-off Timer", style = MaterialTheme.typography.titleMedium)
+                        }
 
-            // Pocket & Bag Proximity Protection Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = Color(0xFF4CAF50),
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Pocket Protection",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Uses Proximity Sensor to suppress shakes inside pockets or bags",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        var expanded by remember { mutableStateOf(false) }
+                        Box {
+                            TextButton(onClick = { expanded = true }) {
+                                Text(if (autoOffMinutes > 0) "$autoOffMinutes min" else "Never")
+                            }
+                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                listOf(1, 3, 5, 10, 0).forEach { mins ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (mins > 0) "$mins minutes" else "Never") },
+                                        onClick = {
+                                            autoOffMinutes = mins
+                                            onUpdateAutoOff(mins)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
+                }
 
-                    Switch(
-                        checked = isPocketProtectionEnabled,
-                        onCheckedChange = { isPocketProtectionEnabled = it }
-                    )
+                // Pocket Protection
+                SettingCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Security, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Pocket Protection", style = MaterialTheme.typography.titleMedium)
+                                Text("Avoid accidental activation", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
+                    }
                 }
             }
 
-            // Foreground Service Info Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.NotificationsActive,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "A persistent notification ensures Android doesn't kill the sensor listener when in standby.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                "Glim • Shake to Light",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
-}`
+}
+
+@Composable
+fun SettingCard(content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth(),
+        content = content
+    )
+}
+
+@Composable
+fun StatusBanner(icon: androidx.compose.ui.graphics.vector.ImageVector, message: String, containerColor: Color, contentColor: Color) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = contentColor)
+            Spacer(Modifier.width(12.dp))
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+        }
+    }
+}
+`
   },
   {
     path: 'app/build.gradle.kts',
@@ -923,11 +1622,11 @@ fun ShakeFlashlightScreen(
 }
 
 android {
-    namespace = "com.flashlight.shake"
+    namespace = "com.eonmirth.glim"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.flashlight.shake"
+        applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -1048,7 +1747,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ShakeFlashlight"
+rootProject.name = "Glim"
 include(":app")`
   }
 ];
@@ -1056,23 +1755,23 @@ include(":app")`
 /** Files required by Android Gradle that are not shown in the in-app source viewer. */
 export const ANDROID_SUPPORT_FILES: AndroidFile[] = [
   { path: 'app/src/main/res/values/strings.xml', name: 'strings.xml', category: 'resource', description: 'App name and product attribution.', code: `<?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">EonMirth Flashlight</string><string name="app_brand">EonMirth</string></resources>` },
+<resources><string name="app_name">Glim</string><string name="app_brand">EonMirth</string></resources>` },
   { path: 'app/src/main/res/values/themes.xml', name: 'themes.xml', category: 'resource', description: 'Material 3 compatible application theme.', code: `<?xml version="1.0" encoding="utf-8"?>
-<resources><style name="Theme.ShakeFlashlight" parent="android:style/Theme.Material.NoActionBar"><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">@android:color/transparent</item><item name="android:navigationBarColor">@android:color/black</item></style></resources>` },
+<resources><style name="Theme.Glim" parent="android:style/Theme.Material.NoActionBar"><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">@android:color/transparent</item><item name="android:navigationBarColor">@android:color/black</item></style></resources>` },
   { path: 'app/src/main/res/xml/backup_rules.xml', name: 'backup_rules.xml', category: 'resource', description: 'Android backup rules.', code: `<?xml version="1.0" encoding="utf-8"?>
 <full-backup-content><include domain="sharedpref" path="." /></full-backup-content>` },
   { path: 'app/src/main/res/xml/data_extraction_rules.xml', name: 'data_extraction_rules.xml', category: 'resource', description: 'Android 12+ data extraction rules.', code: `<?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules><cloud-backup><include domain="sharedpref" path="." /></cloud-backup><device-transfer><include domain="sharedpref" path="." /></device-transfer></data-extraction-rules>` },
   { path: 'app/proguard-rules.pro', name: 'proguard-rules.pro', category: 'gradle', description: 'Release shrinker rules placeholder.', code: '# Add project-specific rules when minification is enabled.' },
   { path: 'app/src/main/res/drawable/ic_launcher.xml', name: 'ic_launcher.xml', category: 'resource', description: 'Temporary vector launcher icon.', code: `<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#0C0D0E" android:pathData="M0,0h108v108h-108z"/><path android:fillColor="#FBBF24" android:pathData="M59,8L25,57h24l-2,43l36,-52h-25z"/></vector>` },
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#0C0D0E" android:pathData="M0,0h108v108h-108z"/><path android:fillColor="#FBBF24" android:pathData="M54,25L25,65h20v25l29,-40h-20z"/></vector>` },
   { path: 'app/src/main/res/drawable/ic_flashlight_notif.xml', name: 'ic_flashlight_notif.xml', category: 'resource', description: 'Notification icon.', code: `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M7,2v11h3v9l7,-12h-4l3,-8z"/></vector>` },
   { path: 'app/src/main/res/drawable/ic_toggle.xml', name: 'ic_toggle.xml', category: 'resource', description: 'Toggle icon.', code: `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M17,7H7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5h10c2.76,0 5,-2.24 5,-5s-2.24,-5 -5,-5zM17,15c-1.66,0 -3,-1.34 -3,-3s1.34,-3 3,-3 3,1.34 3,3 -1.34,3 -3,3z"/></vector>` },
   { path: 'app/src/main/res/drawable/ic_stop.xml', name: 'ic_stop.xml', category: 'resource', description: 'Stop icon.', code: `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFF" android:pathData="M6,6h12v12H6z"/></vector>` },
-  { path: 'app/src/main/java/com/flashlight/shake/ui/theme/Theme.kt', name: 'Theme.kt', category: 'kotlin', description: 'Compose Material 3 color theme.', code: `package com.flashlight.shake.ui.theme
+  { path: 'app/src/main/java/com/eonmirth/glim/ui/theme/Theme.kt', name: 'Theme.kt', category: 'kotlin', description: 'Compose Material 3 color theme.', code: `package com.eonmirth.glim.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -1087,23 +1786,36 @@ private val EonMirthDarkScheme = darkColorScheme(
 )
 
 @Composable
-fun ShakeFlashlightTheme(content: @Composable () -> Unit) {
+fun GlimTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = EonMirthDarkScheme, content = content)
 }` },
-  { path: 'app/src/main/java/com/flashlight/shake/receiver/BootCompletedReceiver.kt', name: 'BootCompletedReceiver.kt', category: 'kotlin', description: 'Restarts the service only when the user had enabled it.', code: `package com.flashlight.shake.receiver
+  { path: 'app/src/main/java/com/eonmirth/glim/receiver/BootCompletedReceiver.kt', name: 'BootCompletedReceiver.kt', category: 'kotlin', description: 'Restarts the service only when the user had enabled it and camera permission is intact.', code: `package com.eonmirth.glim.receiver
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
-import com.flashlight.shake.service.ShakeFlashlightService
+import com.eonmirth.glim.core.persistence.PreferencesManager
+import com.eonmirth.glim.service.GlimService
 
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        val prefs = context.getSharedPreferences(ShakeFlashlightService.PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.getBoolean("service_enabled", false)) {
-            ContextCompat.startForegroundService(context, Intent(context, ShakeFlashlightService::class.java).apply { action = ShakeFlashlightService.ACTION_START })
+        val prefs = PreferencesManager(context)
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (prefs.isGlimEnabled && hasCameraPermission) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, GlimService::class.java).apply {
+                    action = GlimService.ACTION_START
+                }
+            )
         }
     }
 }` }

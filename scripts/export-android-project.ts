@@ -8,11 +8,11 @@ rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
 
 for (const file of [...ANDROID_FILES, ...ANDROID_SUPPORT_FILES]) {
-  const target = join(outputDir, file.path.replaceAll('com/flashlight/shake', 'com/eonmirth/flashlight'));
+  const target = join(outputDir, file.path.replaceAll('com/flashlight/shake', 'com/eonmirth/glim'));
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(
     target,
-    file.code.replaceAll('com.flashlight.shake', 'com.eonmirth.flashlight').trimStart() + '\n',
+    file.code.replaceAll('com.flashlight.shake', 'com.eonmirth.glim').trimStart() + '\n',
     'utf8'
   );
 }
