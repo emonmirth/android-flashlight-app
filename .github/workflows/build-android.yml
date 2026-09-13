@@ -28,7 +28,7 @@ jobs:
       - run: gradle -p android-project :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: EonMirth-Flashlight-debug-apk
+          name: Glim-debug-apk
           path: android-project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
