@@ -41,6 +41,20 @@ This project is built using a React-based exporter that generates a native Andro
 
 ---
 
+## ⚖️ License & Brand Policy
+
+### Software License
+This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for the full text.
+
+### Trademark & Brand Policy
+While the source code of **Glim** is open-source, the **Glim** name, logo, and the **EonMirth** brand are trademarks owned by **EonMirth**. 
+
+- You **may** fork this repository for personal use or study.
+- You **may** contribute to this official repository via Pull Requests.
+- You **may NOT** redistribute this application on any store (Google Play, Amazon, etc.) using the "Glim" or "EonMirth" name, branding, or logos without explicit written permission.
+
+---
+
 ## 💬 Feedback & Contribution
 
 We love feedback! If you find a bug or have a feature suggestion:
