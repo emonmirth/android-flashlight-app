@@ -19,8 +19,14 @@ export const ANDROID_FILES: AndroidFile[] = [
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Hardware Features -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.camera.flash"
         android:required="true" />
@@ -62,7 +68,10 @@ export const ANDROID_FILES: AndroidFile[] = [
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Background sensor monitoring to trigger flashlight on shake gesture" />
+                android:value="Flashlight control via shake gesture" />
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_DESCRIPTION"
+                android:value="Monitors the device accelerometer in the background to detect shake gestures and toggle the flashlight, providing a hands-free utility experience." />
         </service>
 
         <receiver
@@ -232,6 +241,11 @@ object SmartPermissionManager {
 import android.content.Context
 import android.content.SharedPreferences
 
+package com.eonmirth.glim.core.persistence
+
+import android.content.Context
+import android.content.SharedPreferences
+
 class PreferencesManager(context: Context) {
 
     companion object {
@@ -240,6 +254,7 @@ class PreferencesManager(context: Context) {
         const val KEY_SENSITIVITY_G_FORCE = "sensitivity_g_force"
         const val KEY_POCKET_PROTECTION = "pocket_protection_enabled"
         const val KEY_AUTO_OFF_MINUTES = "auto_off_minutes"
+        const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 
         const val DEFAULT_SENSITIVITY = 2.4f
         const val DEFAULT_POCKET_PROTECTION = true
@@ -264,6 +279,10 @@ class PreferencesManager(context: Context) {
     var autoOffMinutes: Int
         get() = prefs.getInt(KEY_AUTO_OFF_MINUTES, DEFAULT_AUTO_OFF)
         set(value) = prefs.edit().putInt(KEY_AUTO_OFF_MINUTES, value).apply()
+
+    var lastUpdateCheck: Long
+        get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
 }
 `
   },
@@ -390,9 +409,10 @@ class SensorEngine(
             Sensor.TYPE_PROXIMITY -> {
                 val distance = event.values[0]
                 val maxRange = event.sensor.maximumRange
-                val newPocketState = distance < maxRange && distance < 4.0f
-                if (newPocketState != isInsidePocket) {
-                    isInsidePocket = newPocketState
+                // Defensive check for various proximity sensor types (binary vs continuous)
+                val isNear = distance < maxRange && distance < 4.0f
+                if (isNear != isInsidePocket) {
+                    isInsidePocket = isNear
                     callback.onPocketStateChanged(isInsidePocket)
                     Log.d(TAG, "Proximity changed: distance=$distance, isInsidePocket=$isInsidePocket")
                 }
@@ -564,10 +584,10 @@ class SmartNotificationManager(private val context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Shake Flashlight Service",
+                "Glim Background Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps shake-to-activate flashlight gesture active in the background"
+                description = "Keeps shake-to-flashlight gesture active in the background"
                 setShowBadge(false)
             }
             val manager = context.getSystemService(NotificationManager::class.java)
@@ -608,13 +628,14 @@ class SmartNotificationManager(private val context: Context) {
         val toggleActionTitle = if (isTorchOn) "Turn Off" else "Turn On"
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle("Shake Flashlight Active")
+            .setContentTitle("Glim is Active")
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_flashlight_notif)
             .setOngoing(true)
             .setContentIntent(openAppPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
         if (!hasPermissionError) {
             builder.addAction(R.drawable.ic_toggle, toggleActionTitle, togglePendingIntent)
@@ -878,6 +899,7 @@ class GlimService : Service(), SensorEventListenerCallback {
         when (action) {
             ACTION_STOP -> {
                 Log.d(TAG, "Stopping foreground service")
+                isServiceRunning = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
@@ -1118,6 +1140,72 @@ class GlimTileService : TileService() {
 }`
   },
   {
+    path: 'app/src/main/java/com/eonmirth/glim/core/update/UpdateManager.kt',
+    name: 'UpdateManager.kt',
+    category: 'kotlin',
+    description: 'Handles in-app update checks by fetching a remote version JSON from the EonMirth server.',
+    code: `package com.eonmirth.glim.core.update
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
+import com.eonmirth.glim.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+object UpdateManager {
+    private const val TAG = "UpdateManager"
+    private const val UPDATE_URL = "https://eonmirth-web.vercel.app/api/glim-version.json"
+
+    data class UpdateInfo(
+        val hasUpdate: Boolean,
+        val latestVersionName: String,
+        val apkUrl: String,
+        val releaseNotes: String
+    )
+
+    suspend fun checkForUpdates(): UpdateInfo? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL(UPDATE_URL)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                val latestVersionCode = json.getInt("versionCode")
+                val currentVersionCode = BuildConfig.VERSION_CODE
+
+                if (latestVersionCode > currentVersionCode) {
+                    return@withContext UpdateInfo(
+                        hasUpdate = true,
+                        latestVersionName = json.getString("versionName"),
+                        apkUrl = json.getString("apkUrl"),
+                        releaseNotes = json.optString("releaseNotes", "New update available")
+                    )
+                }
+            }
+            return@withContext UpdateInfo(false, "", "", "")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check for updates", e)
+            null
+        }
+    }
+
+    fun launchUpdate(context: Context, apkUrl: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+}`
+  },
+  {
     path: 'app/src/main/java/com/eonmirth/glim/MainActivity.kt',
     name: 'MainActivity.kt',
     category: 'kotlin',
@@ -1145,6 +1233,7 @@ import com.eonmirth.glim.core.feature.FeatureStatus
 import com.eonmirth.glim.core.hardware.HardwareCapabilities
 import com.eonmirth.glim.core.permission.SmartPermissionManager
 import com.eonmirth.glim.core.persistence.PreferencesManager
+import com.eonmirth.glim.core.update.UpdateManager
 import com.eonmirth.glim.service.GlimService
 import com.eonmirth.glim.ui.GlimScreen
 import com.eonmirth.glim.ui.theme.GlimTheme
@@ -1155,10 +1244,19 @@ class MainActivity : ComponentActivity() {
     private var isServiceRunning by mutableStateOf(false)
     private var hasCameraPermission by mutableStateOf(false)
     private var hasNotificationPermission by mutableStateOf(false)
+    private var updateInfo by mutableStateOf<UpdateManager.UpdateInfo?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         preferencesManager = PreferencesManager(this)
+
+        // Trigger update check
+        lifecycleScope.launchWhenStarted {
+            val info = UpdateManager.checkForUpdates()
+            if (info?.hasUpdate == true) {
+                updateInfo = info
+            }
+        }
         isServiceRunning = GlimService.isServiceRunning
         hasCameraPermission = SmartPermissionManager.hasCameraPermission(this)
         hasNotificationPermission = SmartPermissionManager.hasNotificationPermission(this)
@@ -1177,12 +1275,12 @@ class MainActivity : ComponentActivity() {
                             !hasCameraFlash -> FeatureState(
                                 FeatureId.SHAKE_FLASHLIGHT,
                                 FeatureStatus.UNSUPPORTED,
-                                "Camera flash hardware is not available on this device"
+                                "Flashlight hardware is not available on this device"
                             )
                             !hasCameraPermission && preferencesManager.isGlimEnabled -> FeatureState(
                                 FeatureId.SHAKE_FLASHLIGHT,
                                 FeatureStatus.PERMISSION_REQUIRED,
-                                "Camera permission is required to operate the flashlight"
+                                "Glim needs Camera permission only to access the flashlight hardware"
                             )
                             isServiceRunning || preferencesManager.isGlimEnabled -> {
                                 if (!hasNotificationPermission) {
@@ -1284,6 +1382,10 @@ class MainActivity : ComponentActivity() {
                         },
                         onUpdateAutoOff = { minutes ->
                             preferencesManager.autoOffMinutes = minutes
+                        },
+                        updateInfo = updateInfo,
+                        onConfirmUpdate = { url ->
+                            UpdateManager.launchUpdate(this@MainActivity, url)
                         }
                     )
                 }
@@ -1301,6 +1403,19 @@ class MainActivity : ComponentActivity() {
         if (!hasCameraPermission && preferencesManager.isGlimEnabled) {
             stopShakeService()
             isServiceRunning = false
+        }
+
+        checkBatteryOptimization()
+    }
+
+    private fun checkBatteryOptimization() {
+        if (preferencesManager.isGlimEnabled) {
+            val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                    Toast.makeText(this, "Note: Glim works better if Battery Optimization is disabled", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -1329,6 +1444,7 @@ class MainActivity : ComponentActivity() {
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1338,6 +1454,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Warning
@@ -1349,6 +1466,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eonmirth.glim.core.feature.FeatureState
@@ -1366,7 +1484,9 @@ fun GlimScreen(
     onToggleService: (Boolean) -> Unit,
     onUpdateSensitivity: (Float) -> Unit,
     onTogglePocketProtection: (Boolean) -> Unit = {},
-    onUpdateAutoOff: (Int) -> Unit = {}
+    onUpdateAutoOff: (Int) -> Unit = {},
+    updateInfo: UpdateManager.UpdateInfo? = null,
+    onConfirmUpdate: (String) -> Unit = {}
 ) {
     val isEnabled = featureState.status == FeatureStatus.ENABLED || featureState.status == FeatureStatus.LIMITED
     val isUnsupported = featureState.status == FeatureStatus.UNSUPPORTED
@@ -1376,6 +1496,7 @@ fun GlimScreen(
     var sensitivitySlider by remember { mutableStateOf(initialSensitivity) }
     var isPocketProtectionEnabled by remember { mutableStateOf(initialPocketProtection) }
     var autoOffMinutes by remember { mutableStateOf(initialAutoOffMinutes) }
+    var showTroubleshooting by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -1571,9 +1692,56 @@ fun GlimScreen(
                         Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
                     }
                 }
+
+                // Troubleshooting for Redmi/MIUI
+                SettingCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .clickable { showTroubleshooting = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.QuestionMark, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Not working on your phone?", style = MaterialTheme.typography.titleMedium)
+                                Text("Click for Redmi/Xiaomi & Samsung fix", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showTroubleshooting) {
+                AlertDialog(
+                    onDismissRequest = { showTroubleshooting = false },
+                    title = { Text("Troubleshooting") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Redmi/Xiaomi/Samsung phones often kill background apps to save battery.", fontWeight = FontWeight.Bold)
+                            Text("1. Long press Glim icon on home screen")
+                            Text("2. Click 'App Info'")
+                            Text("3. Go to 'Battery Saver'")
+                            Text("4. Select 'No Restrictions'")
+                            Text("5. Enable 'Auto-start' (if available)")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTroubleshooting = false }) {
+                            Text("Got it")
+                        }
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            if (updateInfo != null) {
+                UpdateDialog(info = updateInfo, onConfirm = onConfirmUpdate)
+            }
 
             Text(
                 "Glim • Shake to Light",
@@ -1608,6 +1776,25 @@ fun StatusBanner(icon: androidx.compose.ui.graphics.vector.ImageVector, message:
         }
     }
 }
+
+@Composable
+fun UpdateDialog(info: UpdateManager.UpdateInfo, onConfirm: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = { },
+        title = { Text("Update Available") },
+        text = { Text("A new version of Glim (${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\n\nNotes: ${info.releaseNotes}") },
+        confirmButton = {
+            Button(onClick = { onConfirm(info.apkUrl) }) {
+                Text("Update Now")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { /* Could add a ignore logic here */ }) {
+                Text("Later")
+            }
+        }
+    )
+}
 `
   },
   {
@@ -1629,15 +1816,16 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -1686,7 +1874,7 @@ dependencies {
     category: 'gradle',
     description: 'Version catalog for Android Gradle Plugin, Kotlin, Compose, and AndroidX libraries.',
     code: `[versions]
-agp = "8.7.3"
+agp = "8.13.2"
 kotlin = "2.0.21"
 coreKtx = "1.15.0"
 junit = "4.13.2"
@@ -1762,7 +1950,9 @@ export const ANDROID_SUPPORT_FILES: AndroidFile[] = [
 <full-backup-content><include domain="sharedpref" path="." /></full-backup-content>` },
   { path: 'app/src/main/res/xml/data_extraction_rules.xml', name: 'data_extraction_rules.xml', category: 'resource', description: 'Android 12+ data extraction rules.', code: `<?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules><cloud-backup><include domain="sharedpref" path="." /></cloud-backup><device-transfer><include domain="sharedpref" path="." /></device-transfer></data-extraction-rules>` },
-  { path: 'app/proguard-rules.pro', name: 'proguard-rules.pro', category: 'gradle', description: 'Release shrinker rules placeholder.', code: '# Add project-specific rules when minification is enabled.' },
+  { path: 'app/proguard-rules.pro', name: 'proguard-rules.pro', category: 'gradle', description: 'Release shrinker rules.', code: `-keep class com.eonmirth.glim.service.** { *; }
+-keep class com.eonmirth.glim.receiver.** { *; }
+-keep class com.eonmirth.glim.MainActivity { *; }` },
   { path: 'app/src/main/res/drawable/ic_launcher.xml', name: 'ic_launcher.xml', category: 'resource', description: 'Temporary vector launcher icon.', code: `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#0C0D0E" android:pathData="M0,0h108v108h-108z"/><path android:fillColor="#FBBF24" android:pathData="M54,25L25,65h20v25l29,-40h-20z"/></vector>` },
   { path: 'app/src/main/res/drawable/ic_flashlight_notif.xml', name: 'ic_flashlight_notif.xml', category: 'resource', description: 'Notification icon.', code: `<?xml version="1.0" encoding="utf-8"?>
@@ -1798,6 +1988,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.eonmirth.glim.core.persistence.PreferencesManager
+import com.eonmirth.glim.core.update.UpdateManager
 import com.eonmirth.glim.service.GlimService
 
 class BootCompletedReceiver : BroadcastReceiver() {
