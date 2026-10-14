@@ -1782,7 +1782,7 @@ fun UpdateDialog(info: UpdateManager.UpdateInfo, onConfirm: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = { },
         title = { Text("Update Available") },
-        text = { Text("A new version of Glim (\${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\n\nNotes: \${info.releaseNotes}") },
+        text = { Text("A new version of Glim (\${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\\n\\nNotes: \${info.releaseNotes}") },
         confirmButton = {
             Button(onClick = { onConfirm(info.apkUrl) }) {
                 Text("Update Now")
