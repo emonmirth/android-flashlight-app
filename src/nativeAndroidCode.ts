@@ -1744,7 +1744,7 @@ fun GlimScreen(
             }
 
             Text(
-                "Glim • Shake to Light",
+                "Glim • Shake to Light · v1.0.2",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -1782,7 +1782,7 @@ fun UpdateDialog(info: UpdateManager.UpdateInfo, onConfirm: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = { },
         title = { Text("Update Available") },
-        text = { Text("A new version of Glim (${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\n\nNotes: ${info.releaseNotes}") },
+        text = { Text("A new version of Glim (\${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\n\nNotes: \${info.releaseNotes}") },
         confirmButton = {
             Button(onClick = { onConfirm(info.apkUrl) }) {
                 Text("Update Now")
@@ -1816,8 +1816,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
