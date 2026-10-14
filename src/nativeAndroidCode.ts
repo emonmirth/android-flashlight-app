@@ -1222,6 +1222,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.eonmirth.glim.core.feature.FeatureId
 import com.eonmirth.glim.core.feature.FeatureState
 import com.eonmirth.glim.core.feature.FeatureStatus
@@ -1464,6 +1465,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.eonmirth.glim.core.update.UpdateManager
 import com.eonmirth.glim.core.feature.FeatureState
 import com.eonmirth.glim.core.feature.FeatureStatus
 
