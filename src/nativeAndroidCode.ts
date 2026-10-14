@@ -241,11 +241,6 @@ object SmartPermissionManager {
 import android.content.Context
 import android.content.SharedPreferences
 
-package com.eonmirth.glim.core.persistence
-
-import android.content.Context
-import android.content.SharedPreferences
-
 class PreferencesManager(context: Context) {
 
     companion object {
@@ -1841,6 +1836,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
