@@ -5,7 +5,8 @@ export interface ShakeSettings {
   hapticFeedback: boolean;
   soundFeedback: boolean;
   strobeMode: boolean;
-  strobeSpeed: number; // ms
+  strobeSpeed: number; // ms (50 - 500 ms)
+  autoOffMinutes: number; // 0 for Never, or 1, 3, 5, 10 mins
 }
 
 export interface SensorReadout {

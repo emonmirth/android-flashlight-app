@@ -38,6 +38,7 @@ export default function App() {
     soundFeedback: true,
     strobeMode: false,
     strobeSpeed: 100,
+    autoOffMinutes: 3,
   });
 
   const [sensor, setSensor] = useState<SensorReadout>({
@@ -131,6 +132,35 @@ export default function App() {
   useEffect(() => {
     hardwareManager.updateSensitivity(settings.sensitivity);
   }, [settings.sensitivity]);
+
+  // Strobe effect
+  useEffect(() => {
+    if (!flashlight.isOn || !settings.strobeMode) return;
+
+    let strobeState = true;
+    const interval = setInterval(async () => {
+      strobeState = !strobeState;
+      await hardwareManager.setTorch(strobeState);
+    }, Math.max(50, settings.strobeSpeed));
+
+    return () => {
+      clearInterval(interval);
+      if (flashlight.isOn) {
+        hardwareManager.setTorch(true);
+      }
+    };
+  }, [flashlight.isOn, settings.strobeMode, settings.strobeSpeed]);
+
+  // Auto-off timer effect
+  useEffect(() => {
+    if (!flashlight.isOn || settings.autoOffMinutes <= 0) return;
+
+    const timer = setTimeout(() => {
+      handleToggleTorch(false);
+    }, settings.autoOffMinutes * 60 * 1000);
+
+    return () => clearTimeout(timer);
+  }, [flashlight.isOn, settings.autoOffMinutes, handleToggleTorch]);
 
   // Motion sensor listener
   useEffect(() => {

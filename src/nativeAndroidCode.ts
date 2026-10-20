@@ -235,7 +235,7 @@ object SmartPermissionManager {
     path: 'app/src/main/java/com/eonmirth/glim/core/persistence/PreferencesManager.kt',
     name: 'PreferencesManager.kt',
     category: 'kotlin',
-    description: 'Persistent state boundary preserving backward-compatible SharedPreferences keys for service toggle and sensitivity.',
+    description: 'Persistent state boundary preserving backward-compatible SharedPreferences keys for service toggle, sensitivity, strobe mode, and feedback preferences.',
     code: `package com.eonmirth.glim.core.persistence
 
 import android.content.Context
@@ -249,11 +249,16 @@ class PreferencesManager(context: Context) {
         const val KEY_SENSITIVITY_G_FORCE = "sensitivity_g_force"
         const val KEY_POCKET_PROTECTION = "pocket_protection_enabled"
         const val KEY_AUTO_OFF_MINUTES = "auto_off_minutes"
+        const val KEY_STROBE_MODE = "strobe_mode"
+        const val KEY_STROBE_SPEED = "strobe_speed"
+        const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
+        const val KEY_SOUND_FEEDBACK = "sound_feedback"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 
         const val DEFAULT_SENSITIVITY = 2.4f
         const val DEFAULT_POCKET_PROTECTION = true
         const val DEFAULT_AUTO_OFF = 3 // 3 minutes
+        const val DEFAULT_STROBE_SPEED = 100 // ms
     }
 
     private val prefs: SharedPreferences =
@@ -275,11 +280,26 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt(KEY_AUTO_OFF_MINUTES, DEFAULT_AUTO_OFF)
         set(value) = prefs.edit().putInt(KEY_AUTO_OFF_MINUTES, value).apply()
 
+    var isStrobeModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_STROBE_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_STROBE_MODE, value).apply()
+
+    var strobeSpeedMs: Int
+        get() = prefs.getInt(KEY_STROBE_SPEED, DEFAULT_STROBE_SPEED)
+        set(value) = prefs.edit().putInt(KEY_STROBE_SPEED, value).apply()
+
+    var isHapticFeedbackEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HAPTIC_FEEDBACK, true)
+        set(value) = prefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK, value).apply()
+
+    var isSoundFeedbackEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SOUND_FEEDBACK, true)
+        set(value) = prefs.edit().putBoolean(KEY_SOUND_FEEDBACK, value).apply()
+
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
-}
-`
+}`
   },
   {
     path: 'app/src/main/java/com/eonmirth/glim/core/action/SmartAction.kt',
@@ -1337,6 +1357,10 @@ class MainActivity : ComponentActivity() {
                         initialSensitivity = preferencesManager.sensitivityGForce,
                         initialPocketProtection = preferencesManager.isPocketProtectionEnabled,
                         initialAutoOffMinutes = preferencesManager.autoOffMinutes,
+                        initialStrobeMode = preferencesManager.isStrobeModeEnabled,
+                        initialStrobeSpeed = preferencesManager.strobeSpeedMs,
+                        initialHaptic = preferencesManager.isHapticFeedbackEnabled,
+                        initialSound = preferencesManager.isSoundFeedbackEnabled,
                         onRequestPermissions = {
                             val perms = mutableListOf(Manifest.permission.CAMERA)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
@@ -1378,6 +1402,28 @@ class MainActivity : ComponentActivity() {
                         },
                         onUpdateAutoOff = { minutes ->
                             preferencesManager.autoOffMinutes = minutes
+                        },
+                        onToggleStrobeMode = { strobe ->
+                            preferencesManager.isStrobeModeEnabled = strobe
+                        },
+                        onUpdateStrobeSpeed = { speed ->
+                            preferencesManager.strobeSpeedMs = speed
+                        },
+                        onToggleHaptic = { haptic ->
+                            preferencesManager.isHapticFeedbackEnabled = haptic
+                        },
+                        onToggleSound = { sound ->
+                            preferencesManager.isSoundFeedbackEnabled = sound
+                        },
+                        onCheckUpdateManual = {
+                            lifecycleScope.launchWhenStarted {
+                                val info = UpdateManager.checkForUpdates()
+                                if (info?.hasUpdate == true) {
+                                    updateInfo = info
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Glim is up to date!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         },
                         updateInfo = updateInfo,
                         onConfirmUpdate = { url ->
@@ -1434,7 +1480,7 @@ class MainActivity : ComponentActivity() {
     path: 'app/src/main/java/com/eonmirth/glim/ui/GlimScreen.kt',
     name: 'GlimScreen.kt',
     category: 'kotlin',
-    description: 'Jetpack Compose Screen implementing UI with honest status reporting for Limited (notifications disabled) and Permission Required.',
+    description: 'Jetpack Compose Screen implementing M3 UI with TopAppBar Options Menu, Strobe Mode controls, and Diagnostic Dialogs.',
     code: `package com.eonmirth.glim.ui
 
 import androidx.compose.animation.animateColorAsState
@@ -1447,22 +1493,26 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eonmirth.glim.core.update.UpdateManager
@@ -1477,34 +1527,102 @@ fun GlimScreen(
     initialSensitivity: Float = 2.4f,
     initialPocketProtection: Boolean = true,
     initialAutoOffMinutes: Int = 3,
+    initialStrobeMode: Boolean = false,
+    initialStrobeSpeed: Int = 100,
+    initialHaptic: Boolean = true,
+    initialSound: Boolean = true,
     onRequestPermissions: () -> Unit,
     onToggleService: (Boolean) -> Unit,
     onUpdateSensitivity: (Float) -> Unit,
     onTogglePocketProtection: (Boolean) -> Unit = {},
     onUpdateAutoOff: (Int) -> Unit = {},
+    onToggleStrobeMode: (Boolean) -> Unit = {},
+    onUpdateStrobeSpeed: (Int) -> Unit = {},
+    onToggleHaptic: (Boolean) -> Unit = {},
+    onToggleSound: (Boolean) -> Unit = {},
+    onCheckUpdateManual: () -> Unit = {},
     updateInfo: UpdateManager.UpdateInfo? = null,
     onConfirmUpdate: (String) -> Unit = {}
 ) {
     val isEnabled = featureState.status == FeatureStatus.ENABLED || featureState.status == FeatureStatus.LIMITED
     val isUnsupported = featureState.status == FeatureStatus.UNSUPPORTED
     val isPermissionRequired = featureState.status == FeatureStatus.PERMISSION_REQUIRED
-    val isLimited = featureState.status == FeatureStatus.LIMITED
 
     var sensitivitySlider by remember { mutableStateOf(initialSensitivity) }
     var isPocketProtectionEnabled by remember { mutableStateOf(initialPocketProtection) }
     var autoOffMinutes by remember { mutableStateOf(initialAutoOffMinutes) }
+    var isStrobeEnabled by remember { mutableStateOf(initialStrobeMode) }
+    var strobeSpeed by remember { mutableStateOf(initialStrobeSpeed) }
+    var isHapticEnabled by remember { mutableStateOf(initialHaptic) }
+    var isSoundEnabled by remember { mutableStateOf(initialSound) }
+
+    var menuExpanded by remember { mutableStateOf(false) }
     var showTroubleshooting by remember { mutableStateOf(false) }
+    var showTileGuide by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    Text(
-                        "Glim",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 24.sp,
-                        letterSpacing = 1.sp
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Glim",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 22.sp,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            "Shake to Flashlight • v1.0.2",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu Options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Check for Updates") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onCheckUpdateManual()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Battery Saver Fix") },
+                                leadingIcon = { Icon(Icons.Default.BatteryChargingFull, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showTroubleshooting = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Quick Settings Tile") },
+                                leadingIcon = { Icon(Icons.Default.GridOn, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showTileGuide = true
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("About & Privacy") },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showAboutDialog = true
+                                }
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -1517,9 +1635,9 @@ fun GlimScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 12.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
 
             // Main Toggle Card (Material 3 style)
@@ -1530,8 +1648,7 @@ fun GlimScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier
-                        .padding(24.dp),
+                    modifier = Modifier.padding(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -1574,7 +1691,7 @@ fun GlimScreen(
                 }
             }
 
-            // Status Info
+            // Status Banners
             if (isUnsupported) {
                 StatusBanner(
                     icon = Icons.Default.Warning,
@@ -1590,7 +1707,7 @@ fun GlimScreen(
                 ) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text("Permission Required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Camera access is needed to use the flash.", style = MaterialTheme.typography.bodySmall)
+                        Text("Camera access is needed to control the flash.", style = MaterialTheme.typography.bodySmall)
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = onRequestPermissions) {
                             Text("Grant Permission")
@@ -1605,7 +1722,7 @@ fun GlimScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Settings",
+                    "Settings & Preferences",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp)
@@ -1669,6 +1786,72 @@ fun GlimScreen(
                     }
                 }
 
+                // Strobe Mode Toggle
+                SettingCard {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Speed, null, tint = Color(0xFF9C27B0), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text("Strobe / Blink Mode", style = MaterialTheme.typography.titleMedium)
+                                    Text("Repeated flash blinking", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = isStrobeEnabled,
+                                onCheckedChange = {
+                                    isStrobeEnabled = it
+                                    onToggleStrobeMode(it)
+                                }
+                            )
+                        }
+
+                        if (isStrobeEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Blink Speed: $strobeSpeed ms", style = MaterialTheme.typography.labelMedium)
+                            Slider(
+                                value = strobeSpeed.toFloat(),
+                                onValueChange = {
+                                    strobeSpeed = it.toInt()
+                                    onUpdateStrobeSpeed(it.toInt())
+                                },
+                                valueRange = 50f..400f,
+                                steps = 7
+                            )
+                        }
+                    }
+                }
+
+                // Feedback Toggles (Haptic & Sound)
+                SettingCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.VolumeUp, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Sound", style = MaterialTheme.typography.bodyMedium)
+                            Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it; onToggleSound(it) })
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Vibration, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Vibration", style = MaterialTheme.typography.bodyMedium)
+                            Checkbox(checked = isHapticEnabled, onCheckedChange = { isHapticEnabled = it; onToggleHaptic(it) })
+                        }
+                    }
+                }
+
                 // Pocket Protection
                 SettingCard {
                     Row(
@@ -1683,47 +1866,27 @@ fun GlimScreen(
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Pocket Protection", style = MaterialTheme.typography.titleMedium)
-                                Text("Avoid accidental activation", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Avoid accidental activation in bag/pocket", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
                     }
                 }
-
-                // Troubleshooting for Redmi/MIUI
-                SettingCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .clickable { showTroubleshooting = true },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.QuestionMark, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("Not working on your phone?", style = MaterialTheme.typography.titleMedium)
-                                Text("Click for Redmi/Xiaomi & Samsung fix", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
             }
 
+            // Dialogs
             if (showTroubleshooting) {
                 AlertDialog(
                     onDismissRequest = { showTroubleshooting = false },
-                    title = { Text("Troubleshooting") },
+                    title = { Text("Battery Saver & MIUI Fix") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Redmi/Xiaomi/Samsung phones often kill background apps to save battery.", fontWeight = FontWeight.Bold)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Xiaomi, Redmi, Samsung, and Vivo phones kill background apps.", fontWeight = FontWeight.Bold)
                             Text("1. Long press Glim icon on home screen")
                             Text("2. Click 'App Info'")
-                            Text("3. Go to 'Battery Saver'")
-                            Text("4. Select 'No Restrictions'")
-                            Text("5. Enable 'Auto-start' (if available)")
+                            Text("3. Select 'Battery Saver'")
+                            Text("4. Set to 'No Restrictions'")
+                            Text("5. Enable 'Autostart' (if available)")
                         }
                     },
                     confirmButton = {
@@ -1734,17 +1897,48 @@ fun GlimScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (showTileGuide) {
+                AlertDialog(
+                    onDismissRequest = { showTileGuide = false },
+                    title = { Text("Quick Settings Tile") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Add Glim toggle to notification shade:", fontWeight = FontWeight.Bold)
+                            Text("1. Swipe down twice from top of screen")
+                            Text("2. Tap the Pencil (✏️) Edit button")
+                            Text("3. Drag 'Glim Shake' tile to active toggles")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTileGuide = false }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
+
+            if (showAboutDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAboutDialog = false },
+                    title = { Text("Glim • Shake to Light") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Version: v1.0.2 (Build 3)")
+                            Text("Privacy: 100% Offline, no tracking or ads.")
+                            Text("Developer: EonMirth")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showAboutDialog = false }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
 
             if (updateInfo != null) {
                 UpdateDialog(info = updateInfo, onConfirm = onConfirmUpdate)
             }
-
-            Text(
-                "Glim • Shake to Light · v1.0.2",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
         }
     }
 }
@@ -1779,14 +1973,14 @@ fun UpdateDialog(info: UpdateManager.UpdateInfo, onConfirm: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = { },
         title = { Text("Update Available") },
-        text = { Text("A new version of Glim (\${info.latestVersionName}) is available. It is recommended to update for new features and bug fixes.\\n\\nNotes: \${info.releaseNotes}") },
+        text = { Text("A new version of Glim (\${info.latestVersionName}) is available.\\n\\nNotes: \${info.releaseNotes}") },
         confirmButton = {
             Button(onClick = { onConfirm(info.apkUrl) }) {
                 Text("Update Now")
             }
         },
         dismissButton = {
-            TextButton(onClick = { /* Could add a ignore logic here */ }) {
+            TextButton(onClick = { }) {
                 Text("Later")
             }
         }
