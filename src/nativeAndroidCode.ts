@@ -11,8 +11,9 @@ export const ANDROID_FILES: AndroidFile[] = [
     xmlns:tools="http://schemas.android.com/tools"
     >
 
-    <!-- Permissions for Camera Flashlight & Foreground Service -->
+    <!-- Permissions for Camera Flashlight, Audio Clap Detection & Foreground Service -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -253,6 +254,7 @@ class PreferencesManager(context: Context) {
         const val KEY_STROBE_SPEED = "strobe_speed"
         const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         const val KEY_SOUND_FEEDBACK = "sound_feedback"
+        const val KEY_CLAP_DETECTION = "clap_detection_enabled"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 
         const val DEFAULT_SENSITIVITY = 2.4f
@@ -296,9 +298,116 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean(KEY_SOUND_FEEDBACK, true)
         set(value) = prefs.edit().putBoolean(KEY_SOUND_FEEDBACK, value).apply()
 
+    var isClapDetectionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CLAP_DETECTION, false)
+        set(value) = prefs.edit().putBoolean(KEY_CLAP_DETECTION, value).apply()
+
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
+}
+`
+  },
+  {
+    path: 'app/src/main/java/com/eonmirth/glim/sensor/ClapDetector.kt',
+    name: 'ClapDetector.kt',
+    category: 'kotlin',
+    description: 'Low-latency on-device audio amplitude detector that triggers flashlight on sharp sound peaks (claps/whistles).',
+    code: `package com.eonmirth.glim.sensor
+
+import android.annotation.SuppressLint
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.util.Log
+import kotlinx.coroutines.*
+import kotlin.math.abs
+
+class ClapDetector(private val onClapDetected: () -> Unit) {
+
+    private var isListening = false
+    private var job: Job? = null
+
+    companion object {
+        private const val TAG = "ClapDetector"
+        private const val SAMPLE_RATE = 22050
+        private const val AMPLITUDE_THRESHOLD = 18000
+        private const val COOLDOWN_MS = 800L
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startListening() {
+        if (isListening) return
+        isListening = true
+
+        job = CoroutineScope(Dispatchers.IO).launch {
+            val minBufferSize = AudioRecord.getMinBufferSize(
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+
+            if (minBufferSize <= 0) return@launch
+
+            val audioRecord = try {
+                AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    minBufferSize * 2
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "AudioRecord init failed", e)
+                return@launch
+            }
+
+            if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+                audioRecord.release()
+                return@launch
+            }
+
+            try {
+                audioRecord.startRecording()
+                val buffer = ShortArray(minBufferSize)
+                var lastTriggerTime = 0L
+
+                while (isActive && isListening) {
+                    val readSize = audioRecord.read(buffer, 0, buffer.size)
+                    if (readSize > 0) {
+                        var maxAmplitude = 0
+                        for (i in 0 until readSize) {
+                            val amp = abs(buffer[i].toInt())
+                            if (amp > maxAmplitude) {
+                                maxAmplitude = amp
+                            }
+                        }
+
+                        val now = System.currentTimeMillis()
+                        if (maxAmplitude > AMPLITUDE_THRESHOLD && (now - lastTriggerTime) > COOLDOWN_MS) {
+                            lastTriggerTime = now
+                            withContext(Dispatchers.Main) {
+                                onClapDetected()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Audio recording loop error", e)
+            } finally {
+                try {
+                    audioRecord.stop()
+                    audioRecord.release()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun stopListening() {
+        isListening = false
+        job?.cancel()
+        job = null
+    }
 }`
   },
   {
@@ -1415,6 +1524,10 @@ class MainActivity : ComponentActivity() {
                         onToggleSound = { sound ->
                             preferencesManager.isSoundFeedbackEnabled = sound
                         },
+                        initialClapDetection = preferencesManager.isClapDetectionEnabled,
+                        onToggleClapDetection = { clap ->
+                            preferencesManager.isClapDetectionEnabled = clap
+                        },
                         onCheckUpdateManual = {
                             lifecycleScope.launchWhenStarted {
                                 val info = UpdateManager.checkForUpdates()
@@ -1531,6 +1644,7 @@ fun GlimScreen(
     initialStrobeSpeed: Int = 100,
     initialHaptic: Boolean = true,
     initialSound: Boolean = true,
+    initialClapDetection: Boolean = false,
     onRequestPermissions: () -> Unit,
     onToggleService: (Boolean) -> Unit,
     onUpdateSensitivity: (Float) -> Unit,
@@ -1540,6 +1654,7 @@ fun GlimScreen(
     onUpdateStrobeSpeed: (Int) -> Unit = {},
     onToggleHaptic: (Boolean) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
+    onToggleClapDetection: (Boolean) -> Unit = {},
     onCheckUpdateManual: () -> Unit = {},
     updateInfo: UpdateManager.UpdateInfo? = null,
     onConfirmUpdate: (String) -> Unit = {}
@@ -1555,11 +1670,14 @@ fun GlimScreen(
     var strobeSpeed by remember { mutableStateOf(initialStrobeSpeed) }
     var isHapticEnabled by remember { mutableStateOf(initialHaptic) }
     var isSoundEnabled by remember { mutableStateOf(initialSound) }
+    var isClapEnabled by remember { mutableStateOf(initialClapDetection) }
 
     var menuExpanded by remember { mutableStateOf(false) }
     var showTroubleshooting by remember { mutableStateOf(false) }
     var showTileGuide by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -1573,7 +1691,7 @@ fun GlimScreen(
                             letterSpacing = 1.sp
                         )
                         Text(
-                            "Shake to Flashlight • v1.0.2",
+                            "EonMirth Shake & Sound Utility • v1.0.3",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -1614,7 +1732,23 @@ fun GlimScreen(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("About & Privacy") },
+                                text = { Text("Privacy Policy") },
+                                leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showPrivacyDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Terms & EonMirth License") },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showTermsDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("About Glim") },
                                 leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -1640,7 +1774,7 @@ fun GlimScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
 
-            // Main Toggle Card (Material 3 style)
+            // Main Toggle Card
             Surface(
                 onClick = { if (!isUnsupported) onToggleService(!isEnabled) },
                 shape = RoundedCornerShape(28.dp),
@@ -1691,42 +1825,44 @@ fun GlimScreen(
                 }
             }
 
-            // Status Banners
-            if (isUnsupported) {
-                StatusBanner(
-                    icon = Icons.Default.Warning,
-                    message = featureState.message ?: "Hardware not supported",
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                )
-            } else if (isPermissionRequired) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text("Permission Required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Camera access is needed to control the flash.", style = MaterialTheme.typography.bodySmall)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = onRequestPermissions) {
-                            Text("Grant Permission")
-                        }
-                    }
-                }
-            }
-
             // Settings Section
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Settings & Preferences",
+                    "Settings & Features",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp)
                 )
+
+                // Clap & Whistle Sound Detection
+                SettingCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.NotificationsActive, null, tint = Color(0xFF2196F3), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Clap & Whistle Detection", style = MaterialTheme.typography.titleMedium)
+                                Text("Toggle light when loud clap detected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Switch(
+                            checked = isClapEnabled,
+                            onCheckedChange = {
+                                isClapEnabled = it
+                                onToggleClapDetection(it)
+                            }
+                        )
+                    }
+                }
 
                 // Sensitivity
                 SettingCard {
@@ -1827,7 +1963,7 @@ fun GlimScreen(
                     }
                 }
 
-                // Feedback Toggles (Haptic & Sound)
+                // Feedback Toggles
                 SettingCard {
                     Row(
                         modifier = Modifier
@@ -1869,6 +2005,123 @@ fun GlimScreen(
                                 Text("Avoid accidental activation in bag/pocket", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
+                        Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
+                    }
+                }
+            }
+
+            // EonMirth Brand Attribution
+            Text(
+                "Official EonMirth Product • https://eonmirth-web.vercel.app/",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+            )
+
+            // Dialogs
+            if (showTroubleshooting) {
+                AlertDialog(
+                    onDismissRequest = { showTroubleshooting = false },
+                    title = { Text("Battery Saver & MIUI Fix") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Xiaomi, Redmi, Samsung, and Vivo phones kill background apps.", fontWeight = FontWeight.Bold)
+                            Text("1. Long press Glim icon on home screen")
+                            Text("2. Click 'App Info'")
+                            Text("3. Select 'Battery Saver'")
+                            Text("4. Set to 'No Restrictions'")
+                            Text("5. Enable 'Autostart' (if available)")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTroubleshooting = false }) {
+                            Text("Got it")
+                        }
+                    }
+                )
+            }
+
+            if (showPrivacyDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPrivacyDialog = false },
+                    title = { Text("EonMirth Privacy Policy") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("1. Zero Data Collection: Glim does not record or upload any data.")
+                            Text("2. Camera Access: Used strictly for physical LED torch control.")
+                            Text("3. Audio Access: Local real-time sound amplitude analysis for Clap Detection only. No audio is ever stored or transmitted.")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showPrivacyDialog = false }) {
+                            Text("Accept")
+                        }
+                    }
+                )
+            }
+
+            if (showTermsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showTermsDialog = false },
+                    title = { Text("EonMirth Terms & License") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Glim is licensed under Apache License 2.0.")
+                            Text("The EonMirth brand name and logos are official trademarks.")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTermsDialog = false }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+
+            if (showTileGuide) {
+                AlertDialog(
+                    onDismissRequest = { showTileGuide = false },
+                    title = { Text("Quick Settings Tile") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Add Glim toggle to notification shade:", fontWeight = FontWeight.Bold)
+                            Text("1. Swipe down twice from top of screen")
+                            Text("2. Tap the Pencil (✏️) Edit button")
+                            Text("3. Drag 'Glim Shake' tile to active toggles")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTileGuide = false }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
+
+            if (showAboutDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAboutDialog = false },
+                    title = { Text("Glim • Shake & Sound Light") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Version: v1.0.3 (Build 4)")
+                            Text("Privacy: 100% Offline, no tracking or ads.")
+                            Text("Developer: EonMirth (eonmirth-web.vercel.app)")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showAboutDialog = false }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
+
+            if (updateInfo != null) {
+                UpdateDialog(info = updateInfo, onConfirm = onConfirmUpdate)
+            }
+        }
+    }
+}
                         Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
                     }
                 }

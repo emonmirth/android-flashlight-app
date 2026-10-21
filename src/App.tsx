@@ -39,6 +39,7 @@ export default function App() {
     strobeMode: false,
     strobeSpeed: 100,
     autoOffMinutes: 3,
+    clapDetectionEnabled: false,
   });
 
   const [sensor, setSensor] = useState<SensorReadout>({

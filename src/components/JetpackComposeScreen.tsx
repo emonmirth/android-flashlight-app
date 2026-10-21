@@ -21,6 +21,11 @@ import {
   AlertTriangle,
   Github,
   HelpCircle,
+  Mic,
+  MicOff,
+  Lock,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShakeSettings, SensorReadout, ProximityState, FlashlightState } from '../types';
@@ -52,10 +57,9 @@ export const JetpackComposeScreen: React.FC<Props> = ({
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<
-    'none' | 'update' | 'battery' | 'tile' | 'about'
+    'none' | 'update' | 'battery' | 'tile' | 'about' | 'privacy' | 'terms'
   >('none');
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
   const isPocketBlocked = settings.pocketModeEnabled && proximity.isNear;
 
@@ -67,7 +71,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
 
   const handleCheckUpdate = () => {
     setIsCheckingUpdate(true);
-    setUpdateStatus(null);
     setTimeout(() => {
       setIsCheckingUpdate(false);
       setActiveDialog('update');
@@ -86,10 +89,10 @@ export const JetpackComposeScreen: React.FC<Props> = ({
             <h1 className="text-base font-bold tracking-tight text-neutral-100 flex items-center gap-1.5">
               Glim
               <span className="text-[10px] font-semibold text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/20">
-                v1.0.2
+                v1.0.3
               </span>
             </h1>
-            <p className="text-[10px] text-neutral-400">Shake to Flashlight • M3 UI</p>
+            <p className="text-[10px] text-neutral-400">EonMirth Shake & Sound Utility</p>
           </div>
         </div>
 
@@ -180,12 +183,34 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                     <button
                       onClick={() => {
                         setMenuOpen(false);
+                        setActiveDialog('privacy');
+                      }}
+                      className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-neutral-800 transition"
+                    >
+                      <Lock className="h-4 w-4 text-emerald-400" />
+                      Privacy Policy
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setActiveDialog('terms');
+                      }}
+                      className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-neutral-800 transition"
+                    >
+                      <FileText className="h-4 w-4 text-blue-400" />
+                      Terms & EonMirth License
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
                         setActiveDialog('about');
                       }}
                       className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-neutral-800 transition"
                     >
                       <Info className="h-4 w-4 text-purple-400" />
-                      About Glim & Privacy
+                      About EonMirth Glim
                     </button>
                   </motion.div>
                 </>
@@ -246,21 +271,21 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 Torch {flashlight.isOn ? 'ON' : 'OFF'}
               </span>
 
-              {settings.strobeMode && flashlight.isOn && (
-                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-300 border border-purple-500/30">
-                  ⚡ Strobe Mode
+              {settings.clapDetectionEnabled && (
+                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                  <Mic className="h-3 w-3" /> Clap Guard
                 </span>
               )}
 
-              {flashlight.isHardwareTorchActive && (
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/30">
-                  Hardware LED
+              {settings.strobeMode && flashlight.isOn && (
+                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-300 border border-purple-500/30">
+                  ⚡ Strobe
                 </span>
               )}
             </div>
 
             <p className="mt-1 text-[11px] text-neutral-500">
-              Tap icon to toggle manually or shake phone
+              Shake phone or clap sound to toggle
             </p>
           </div>
         </div>
@@ -315,6 +340,73 @@ export const JetpackComposeScreen: React.FC<Props> = ({
               />
             </button>
           </div>
+        </div>
+
+        {/* 👏 Clap & Whistle Sound Detection Card */}
+        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                  settings.clapDetectionEnabled
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'bg-neutral-800 text-neutral-400'
+                }`}
+              >
+                <Mic className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-neutral-200">
+                  Clap & Whistle Detection
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  Toggle flashlight when a loud clap or whistle is detected
+                </p>
+              </div>
+            </div>
+
+            <button
+              role="switch"
+              aria-checked={settings.clapDetectionEnabled}
+              onClick={() =>
+                onUpdateSettings((prev) => ({
+                  ...prev,
+                  clapDetectionEnabled: !prev.clapDetectionEnabled,
+                }))
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${
+                settings.clapDetectionEnabled ? 'bg-blue-500' : 'bg-neutral-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 mt-1 ${
+                  settings.clapDetectionEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {settings.clapDetectionEnabled && (
+            <div className="rounded-xl bg-neutral-950 p-3 border border-neutral-800 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-neutral-300">
+                <span>Sound Sensor Guard:</span>
+                <span className="text-blue-400 font-semibold flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-blue-400 animate-ping" />
+                  Listening for Claps
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-400">
+                🔒 <strong>100% On-Device:</strong> Microphone audio is processed in real time to detect sharp sound amplitude peaks. Audio data is never recorded or saved.
+              </p>
+              <button
+                onClick={onToggleTorch}
+                className="w-full py-2 rounded-xl bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/30 hover:bg-blue-500/30 transition flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Simulate Loud Clap Trigger
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Sensitivity & Auto-Off Timer Card */}
@@ -381,7 +473,7 @@ export const JetpackComposeScreen: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Auto-off Timer Dropdown Choice */}
+          {/* Auto-off Timer Choice */}
           <div className="flex items-center justify-between pt-2 border-t border-neutral-800/80">
             <span className="text-xs text-neutral-300 font-medium">Auto-off Timer:</span>
             <div className="flex gap-1.5">
@@ -471,7 +563,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Strobe Speed Slider if strobe is active */}
           {settings.strobeMode && (
             <div className="space-y-1.5 p-2 rounded-xl bg-neutral-950 border border-neutral-800">
               <div className="flex justify-between text-xs text-neutral-300 font-medium">
@@ -492,10 +583,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 }}
                 className="w-full accent-purple-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg appearance-none"
               />
-              <div className="flex justify-between text-[9px] text-neutral-500">
-                <span>Fast (50ms)</span>
-                <span>Slow (400ms)</span>
-              </div>
             </div>
           )}
 
@@ -606,12 +693,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 </span>
               </div>
 
-              {isPocketBlocked && (
-                <div className="rounded-lg bg-red-950/40 p-2 text-[11px] text-red-300 border border-red-900/40">
-                  ⚠️ Shake gestures are currently suppressed because proximity sensor is covered.
-                </div>
-              )}
-
               <button
                 id="simulate-pocket-btn"
                 onClick={onTogglePocketSimulation}
@@ -653,6 +734,22 @@ export const JetpackComposeScreen: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {/* EonMirth Brand Attribution Footer */}
+        <div className="text-center pt-2 space-y-1">
+          <a
+            href="https://eonmirth-web.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-amber-400/90 font-medium hover:text-amber-300 transition"
+          >
+            <span>An official EonMirth Product</span>
+            <ExternalLink className="h-3 w-3" />
+          </a>
+          <p className="text-[10px] text-neutral-500">
+            Open Source • Privacy First • No Tracking
+          </p>
+        </div>
       </div>
 
       {/* Dialog Modals */}
@@ -679,14 +776,14 @@ export const JetpackComposeScreen: React.FC<Props> = ({
               <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs">
                 <div className="flex justify-between text-neutral-300 font-medium">
                   <span>Current Installed:</span>
-                  <span className="font-mono text-neutral-400">v1.0.2 (Build 3)</span>
+                  <span className="font-mono text-neutral-400">v1.0.3 (Build 4)</span>
                 </div>
                 <div className="flex justify-between text-amber-300 font-semibold">
                   <span>Remote Version:</span>
-                  <span className="font-mono text-amber-400">v1.0.2 (Up to Date)</span>
+                  <span className="font-mono text-amber-400">v1.0.3 (Up to Date)</span>
                 </div>
                 <p className="text-[11px] text-neutral-400 pt-1 border-t border-neutral-800">
-                  ✅ You are running the latest version of Glim. In-app update checks run automatically when connected.
+                  ✅ You are running the latest version of Glim.
                 </p>
               </div>
 
@@ -695,6 +792,83 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 className="w-full py-2.5 rounded-xl bg-amber-400 text-neutral-950 font-bold text-xs hover:bg-amber-300 transition"
               >
                 Close
+              </button>
+            </motion.div>
+          </div>
+        )}
+
+        {/* EonMirth Privacy Policy Dialog */}
+        {activeDialog === 'privacy' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-sm rounded-3xl bg-neutral-900 border border-neutral-800 p-5 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400">
+                  <Lock className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-neutral-100">Privacy Policy</h3>
+                  <p className="text-xs text-neutral-400">EonMirth Product Privacy Assurance</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs text-neutral-300">
+                <p>🔒 <strong>Zero Data Collection:</strong> Glim collects zero personal data, analytics, or device identifiers.</p>
+                <p>📸 <strong>Camera Permission:</strong> Used exclusively to control the physical LED torch hardware.</p>
+                <p>🎙️ <strong>Microphone Permission:</strong> Used solely for real-time local amplitude peak analysis for Clap Detection. No audio is ever recorded, stored, or transmitted.</p>
+                <p>🌐 <strong>Offline First:</strong> All operations execute 100% on your device.</p>
+                <p className="text-[11px] text-neutral-400 pt-1 border-t border-neutral-800">
+                  Full policy available at{' '}
+                  <a href="https://eonmirth-web.vercel.app/" target="_blank" rel="noreferrer" className="text-amber-400 underline">
+                    eonmirth-web.vercel.app
+                  </a>
+                </p>
+              </div>
+
+              <button
+                onClick={() => setActiveDialog('none')}
+                className="w-full py-2.5 rounded-xl bg-emerald-500 text-neutral-950 font-bold text-xs hover:bg-emerald-400 transition"
+              >
+                Accept & Close
+              </button>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Terms of Service & EonMirth License Dialog */}
+        {activeDialog === 'terms' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-sm rounded-3xl bg-neutral-900 border border-neutral-800 p-5 space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-neutral-100">Terms & License</h3>
+                  <p className="text-xs text-neutral-400">Apache 2.0 & EonMirth Brand Policy</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs text-neutral-300">
+                <p>📄 <strong>License:</strong> Licensed under the Apache License 2.0.</p>
+                <p>🏷️ <strong>Trademark:</strong> The "Glim" name and "EonMirth" brand are trademarks owned by EonMirth.</p>
+                <p>⚖️ You are free to fork and study the source code for personal use or contribute via Pull Requests.</p>
+              </div>
+
+              <button
+                onClick={() => setActiveDialog('none')}
+                className="w-full py-2.5 rounded-xl bg-blue-500 text-neutral-950 font-bold text-xs hover:bg-blue-400 transition"
+              >
+                I Understand
               </button>
             </motion.div>
           </div>
@@ -794,15 +968,15 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                   <Zap className="h-6 w-6 fill-current" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-neutral-100">Glim • Shake to Light</h3>
-                  <p className="text-xs text-neutral-400">Version 1.0.2 • Open Source</p>
+                  <h3 className="text-base font-bold text-neutral-100">Glim • Shake & Sound Light</h3>
+                  <p className="text-xs text-neutral-400">Version 1.0.3 (Build 4) • EonMirth</p>
                 </div>
               </div>
 
               <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-1.5 text-xs text-neutral-300">
                 <p>🔒 <strong>Privacy First:</strong> Zero tracking, zero ads, no data collected.</p>
                 <p>⚡ <strong>Camera2 API:</strong> Direct hardware LED torch control.</p>
-                <p>🛡️ <strong>Pocket Protection:</strong> Proximity sensor prevents accidental trips.</p>
+                <p>👏 <strong>Clap Detector:</strong> On-device amplitude peak trigger.</p>
                 <p className="text-neutral-400 text-[11px] pt-1 border-t border-neutral-800">
                   Developed with ❤️ by EonMirth.
                 </p>

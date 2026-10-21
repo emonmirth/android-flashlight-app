@@ -7,6 +7,7 @@ export interface ShakeSettings {
   strobeMode: boolean;
   strobeSpeed: number; // ms (50 - 500 ms)
   autoOffMinutes: number; // 0 for Never, or 1, 3, 5, 10 mins
+  clapDetectionEnabled: boolean; // Clap / Whistle sound trigger
 }
 
 export interface SensorReadout {
