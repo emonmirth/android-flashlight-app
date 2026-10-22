@@ -250,8 +250,6 @@ class PreferencesManager(context: Context) {
         const val KEY_SENSITIVITY_G_FORCE = "sensitivity_g_force"
         const val KEY_POCKET_PROTECTION = "pocket_protection_enabled"
         const val KEY_AUTO_OFF_MINUTES = "auto_off_minutes"
-        const val KEY_STROBE_MODE = "strobe_mode"
-        const val KEY_STROBE_SPEED = "strobe_speed"
         const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         const val KEY_SOUND_FEEDBACK = "sound_feedback"
         const val KEY_CLAP_DETECTION = "clap_detection_enabled"
@@ -260,7 +258,6 @@ class PreferencesManager(context: Context) {
         const val DEFAULT_SENSITIVITY = 2.4f
         const val DEFAULT_POCKET_PROTECTION = true
         const val DEFAULT_AUTO_OFF = 3 // 3 minutes
-        const val DEFAULT_STROBE_SPEED = 100 // ms
     }
 
     private val prefs: SharedPreferences =
@@ -281,14 +278,6 @@ class PreferencesManager(context: Context) {
     var autoOffMinutes: Int
         get() = prefs.getInt(KEY_AUTO_OFF_MINUTES, DEFAULT_AUTO_OFF)
         set(value) = prefs.edit().putInt(KEY_AUTO_OFF_MINUTES, value).apply()
-
-    var isStrobeModeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_STROBE_MODE, false)
-        set(value) = prefs.edit().putBoolean(KEY_STROBE_MODE, value).apply()
-
-    var strobeSpeedMs: Int
-        get() = prefs.getInt(KEY_STROBE_SPEED, DEFAULT_STROBE_SPEED)
-        set(value) = prefs.edit().putInt(KEY_STROBE_SPEED, value).apply()
 
     var isHapticFeedbackEnabled: Boolean
         get() = prefs.getBoolean(KEY_HAPTIC_FEEDBACK, true)
@@ -1512,12 +1501,6 @@ class MainActivity : ComponentActivity() {
                         onUpdateAutoOff = { minutes ->
                             preferencesManager.autoOffMinutes = minutes
                         },
-                        onToggleStrobeMode = { strobe ->
-                            preferencesManager.isStrobeModeEnabled = strobe
-                        },
-                        onUpdateStrobeSpeed = { speed ->
-                            preferencesManager.strobeSpeedMs = speed
-                        },
                         onToggleHaptic = { haptic ->
                             preferencesManager.isHapticFeedbackEnabled = haptic
                         },
@@ -1640,8 +1623,6 @@ fun GlimScreen(
     initialSensitivity: Float = 2.4f,
     initialPocketProtection: Boolean = true,
     initialAutoOffMinutes: Int = 3,
-    initialStrobeMode: Boolean = false,
-    initialStrobeSpeed: Int = 100,
     initialHaptic: Boolean = true,
     initialSound: Boolean = true,
     initialClapDetection: Boolean = false,
@@ -1650,8 +1631,6 @@ fun GlimScreen(
     onUpdateSensitivity: (Float) -> Unit,
     onTogglePocketProtection: (Boolean) -> Unit = {},
     onUpdateAutoOff: (Int) -> Unit = {},
-    onToggleStrobeMode: (Boolean) -> Unit = {},
-    onUpdateStrobeSpeed: (Int) -> Unit = {},
     onToggleHaptic: (Boolean) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
     onToggleClapDetection: (Boolean) -> Unit = {},
@@ -1666,8 +1645,6 @@ fun GlimScreen(
     var sensitivitySlider by remember { mutableStateOf(initialSensitivity) }
     var isPocketProtectionEnabled by remember { mutableStateOf(initialPocketProtection) }
     var autoOffMinutes by remember { mutableStateOf(initialAutoOffMinutes) }
-    var isStrobeEnabled by remember { mutableStateOf(initialStrobeMode) }
-    var strobeSpeed by remember { mutableStateOf(initialStrobeSpeed) }
     var isHapticEnabled by remember { mutableStateOf(initialHaptic) }
     var isSoundEnabled by remember { mutableStateOf(initialSound) }
     var isClapEnabled by remember { mutableStateOf(initialClapDetection) }
@@ -1918,47 +1895,6 @@ fun GlimScreen(
                                     )
                                 }
                             }
-                        }
-                    }
-                }
-
-                // Strobe Mode Toggle
-                SettingCard {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Speed, null, tint = Color(0xFF9C27B0), modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Column {
-                                    Text("Strobe / Blink Mode", style = MaterialTheme.typography.titleMedium)
-                                    Text("Repeated flash blinking", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Switch(
-                                checked = isStrobeEnabled,
-                                onCheckedChange = {
-                                    isStrobeEnabled = it
-                                    onToggleStrobeMode(it)
-                                }
-                            )
-                        }
-
-                        if (isStrobeEnabled) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Blink Speed: $strobeSpeed ms", style = MaterialTheme.typography.labelMedium)
-                            Slider(
-                                value = strobeSpeed.toFloat(),
-                                onValueChange = {
-                                    strobeSpeed = it.toInt()
-                                    onUpdateStrobeSpeed(it.toInt())
-                                },
-                                valueRange = 50f..400f,
-                                steps = 7
-                            )
                         }
                     }
                 }
@@ -2260,8 +2196,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

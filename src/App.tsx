@@ -36,8 +36,6 @@ export default function App() {
     pocketModeEnabled: true,
     hapticFeedback: true,
     soundFeedback: true,
-    strobeMode: false,
-    strobeSpeed: 100,
     autoOffMinutes: 3,
     clapDetectionEnabled: false,
   });
@@ -134,30 +132,16 @@ export default function App() {
     hardwareManager.updateSensitivity(settings.sensitivity);
   }, [settings.sensitivity]);
 
-  // Strobe effect
-  useEffect(() => {
-    if (!flashlight.isOn || !settings.strobeMode) return;
-
-    let strobeState = true;
-    const interval = setInterval(async () => {
-      strobeState = !strobeState;
-      await hardwareManager.setTorch(strobeState);
-    }, Math.max(50, settings.strobeSpeed));
-
-    return () => {
-      clearInterval(interval);
-      if (flashlight.isOn) {
-        hardwareManager.setTorch(true);
-      }
-    };
-  }, [flashlight.isOn, settings.strobeMode, settings.strobeSpeed]);
-
   // Auto-off timer effect
   useEffect(() => {
     if (!flashlight.isOn || settings.autoOffMinutes <= 0) return;
 
     const timer = setTimeout(() => {
       handleToggleTorch(false);
+    }, settings.autoOffMinutes * 60 * 1000);
+
+    return () => clearTimeout(timer);
+  }, [flashlight.isOn, settings.autoOffMinutes, handleToggleTorch]);
     }, settings.autoOffMinutes * 60 * 1000);
 
     return () => clearTimeout(timer);

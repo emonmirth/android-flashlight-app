@@ -4,8 +4,6 @@ export interface ShakeSettings {
   pocketModeEnabled: boolean;
   hapticFeedback: boolean;
   soundFeedback: boolean;
-  strobeMode: boolean;
-  strobeSpeed: number; // ms (50 - 500 ms)
   autoOffMinutes: number; // 0 for Never, or 1, 3, 5, 10 mins
   clapDetectionEnabled: boolean; // Clap / Whistle sound trigger
 }

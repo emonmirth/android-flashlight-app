@@ -276,12 +276,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                   <Mic className="h-3 w-3" /> Clap Guard
                 </span>
               )}
-
-              {settings.strobeMode && flashlight.isOn && (
-                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-300 border border-purple-500/30">
-                  ⚡ Strobe
-                </span>
-              )}
             </div>
 
             <p className="mt-1 text-[11px] text-neutral-500">
@@ -530,64 +524,51 @@ export const JetpackComposeScreen: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Strobe Mode & Feedback Options Card */}
+        {/* Feedback Options Card */}
         <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
           <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-purple-400" />
-            Flashlight Effects & Feedback
+            <Volume2 className="h-4 w-4 text-amber-400" />
+            Feedback Options
           </h3>
 
-          {/* Strobe Mode Toggle */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="space-y-0.5">
-              <span className="text-xs font-medium text-neutral-200">Strobe / Blink Mode</span>
-              <p className="text-[10px] text-neutral-400">
-                Flashlight blinks repeatedly when toggled on
-              </p>
-            </div>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            {/* Sound Feedback */}
             <button
-              role="switch"
-              aria-checked={settings.strobeMode}
               onClick={() =>
-                onUpdateSettings((prev) => ({ ...prev, strobeMode: !prev.strobeMode }))
+                onUpdateSettings((prev) => ({
+                  ...prev,
+                  soundFeedback: !prev.soundFeedback,
+                }))
               }
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${
-                settings.strobeMode ? 'bg-purple-500' : 'bg-neutral-700'
+              className={`flex items-center gap-2 rounded-xl p-2.5 text-xs font-medium border transition ${
+                settings.soundFeedback
+                  ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
+                  : 'bg-neutral-800/50 border-neutral-800 text-neutral-400'
               }`}
             >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 mt-1 ${
-                  settings.strobeMode ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
+              <Volume2 className="h-4 w-4" />
+              <span>Sound Effect</span>
+            </button>
+
+            {/* Haptic Feedback */}
+            <button
+              onClick={() =>
+                onUpdateSettings((prev) => ({
+                  ...prev,
+                  hapticFeedback: !prev.hapticFeedback,
+                }))
+              }
+              className={`flex items-center gap-2 rounded-xl p-2.5 text-xs font-medium border transition ${
+                settings.hapticFeedback
+                  ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
+                  : 'bg-neutral-800/50 border-neutral-800 text-neutral-400'
+              }`}
+            >
+              <Vibrate className="h-4 w-4" />
+              <span>Haptic Vibration</span>
             </button>
           </div>
-
-          {settings.strobeMode && (
-            <div className="space-y-1.5 p-2 rounded-xl bg-neutral-950 border border-neutral-800">
-              <div className="flex justify-between text-xs text-neutral-300 font-medium">
-                <span>Blink Interval Speed:</span>
-                <span className="text-purple-400 font-mono font-bold">
-                  {settings.strobeSpeed} ms
-                </span>
-              </div>
-              <input
-                type="range"
-                min={50}
-                max={400}
-                step={25}
-                value={settings.strobeSpeed}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  onUpdateSettings((prev) => ({ ...prev, strobeSpeed: val }));
-                }}
-                className="w-full accent-purple-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg appearance-none"
-              />
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-800">
-            {/* Sound Feedback */}
+        </div>
             <button
               onClick={() =>
                 onUpdateSettings((prev) => ({
