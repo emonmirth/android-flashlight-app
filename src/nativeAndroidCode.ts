@@ -1455,8 +1455,6 @@ class MainActivity : ComponentActivity() {
                         initialSensitivity = preferencesManager.sensitivityGForce,
                         initialPocketProtection = preferencesManager.isPocketProtectionEnabled,
                         initialAutoOffMinutes = preferencesManager.autoOffMinutes,
-                        initialStrobeMode = preferencesManager.isStrobeModeEnabled,
-                        initialStrobeSpeed = preferencesManager.strobeSpeedMs,
                         initialHaptic = preferencesManager.isHapticFeedbackEnabled,
                         initialSound = preferencesManager.isSoundFeedbackEnabled,
                         onRequestPermissions = {
@@ -2058,79 +2056,6 @@ fun GlimScreen(
         }
     }
 }
-                        Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
-                    }
-                }
-            }
-
-            // Dialogs
-            if (showTroubleshooting) {
-                AlertDialog(
-                    onDismissRequest = { showTroubleshooting = false },
-                    title = { Text("Battery Saver & MIUI Fix") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Xiaomi, Redmi, Samsung, and Vivo phones kill background apps.", fontWeight = FontWeight.Bold)
-                            Text("1. Long press Glim icon on home screen")
-                            Text("2. Click 'App Info'")
-                            Text("3. Select 'Battery Saver'")
-                            Text("4. Set to 'No Restrictions'")
-                            Text("5. Enable 'Autostart' (if available)")
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showTroubleshooting = false }) {
-                            Text("Got it")
-                        }
-                    }
-                )
-            }
-
-            if (showTileGuide) {
-                AlertDialog(
-                    onDismissRequest = { showTileGuide = false },
-                    title = { Text("Quick Settings Tile") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Add Glim toggle to notification shade:", fontWeight = FontWeight.Bold)
-                            Text("1. Swipe down twice from top of screen")
-                            Text("2. Tap the Pencil (✏️) Edit button")
-                            Text("3. Drag 'Glim Shake' tile to active toggles")
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showTileGuide = false }) {
-                            Text("Close")
-                        }
-                    }
-                )
-            }
-
-            if (showAboutDialog) {
-                AlertDialog(
-                    onDismissRequest = { showAboutDialog = false },
-                    title = { Text("Glim • Shake to Light") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Version: v1.0.2 (Build 3)")
-                            Text("Privacy: 100% Offline, no tracking or ads.")
-                            Text("Developer: EonMirth")
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showAboutDialog = false }) {
-                            Text("Close")
-                        }
-                    }
-                )
-            }
-
-            if (updateInfo != null) {
-                UpdateDialog(info = updateInfo, onConfirm = onConfirmUpdate)
-            }
-        }
-    }
-}
 
 @Composable
 fun SettingCard(content: @Composable () -> Unit) {
@@ -2196,8 +2121,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
