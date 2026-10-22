@@ -74,6 +74,17 @@ export const ANDROID_FILES: AndroidFile[] = [
                 android:value="Monitors the device accelerometer in the background to detect shake gestures and toggle the flashlight, providing a hands-free utility experience." />
         </service>
 
+        <!-- FileProvider for In-App APK Updates -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="\${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <receiver
             android:name=".receiver.BootCompletedReceiver"
             android:enabled="true"
@@ -1155,17 +1166,26 @@ class GlimTileService : TileService() {
     path: 'app/src/main/java/com/eonmirth/glim/core/update/UpdateManager.kt',
     name: 'UpdateManager.kt',
     category: 'kotlin',
-    description: 'Handles in-app update checks by fetching a remote version JSON from the EonMirth server.',
+    description: 'Handles in-app update checks, background APK downloading, and secure FileProvider package installation.',
     code: `package com.eonmirth.glim.core.update
 
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.database.Cursor
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.util.Log
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.eonmirth.glim.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -1211,9 +1231,77 @@ object UpdateManager {
     }
 
     fun launchUpdate(context: Context, apkUrl: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl))
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        try {
+            val destination = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Glim-Update.apk")
+            if (destination.exists()) destination.delete()
+
+            val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
+                setTitle("Downloading Glim Update")
+                setDescription("Downloading latest version of Glim...")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationUri(Uri.fromFile(destination))
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+
+            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val downloadId = downloadManager.enqueue(request)
+
+            Toast.makeText(context, "Downloading update in background...", Toast.LENGTH_SHORT).show()
+
+            val onComplete = object : BroadcastReceiver() {
+                override fun onReceive(ctxt: Context, intent: Intent) {
+                    val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                    if (downloadId == id) {
+                        try {
+                            val query = DownloadManager.Query().setFilterById(downloadId)
+                            val cursor: Cursor = downloadManager.query(query)
+                            if (cursor.moveToFirst()) {
+                                val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                                if (statusIndex != -1 && cursor.getInt(statusIndex) == DownloadManager.STATUS_SUCCESSFUL) {
+                                    promptInstall(ctxt, destination)
+                                }
+                            }
+                            cursor.close()
+                            ctxt.unregisterReceiver(this)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Install prompt failed", e)
+                        }
+                    }
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch update download", e)
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    private fun promptInstall(context: Context, file: File) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "\${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to prompt APK installation", e)
+            Toast.makeText(context, "Installation failed. Please open from downloads.", Toast.LENGTH_LONG).show()
+        }
     }
 }`
   },
@@ -1987,8 +2075,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -2122,6 +2210,11 @@ export const ANDROID_SUPPORT_FILES: AndroidFile[] = [
 <full-backup-content><include domain="sharedpref" path="." /></full-backup-content>` },
   { path: 'app/src/main/res/xml/data_extraction_rules.xml', name: 'data_extraction_rules.xml', category: 'resource', description: 'Android 12+ data extraction rules.', code: `<?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules><cloud-backup><include domain="sharedpref" path="." /></cloud-backup><device-transfer><include domain="sharedpref" path="." /></device-transfer></data-extraction-rules>` },
+  { path: 'app/src/main/res/xml/file_paths.xml', name: 'file_paths.xml', category: 'resource', description: 'FileProvider paths for secure APK installation.', code: `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="download_updates" path="Download" />
+    <cache-path name="cache_updates" path="." />
+</paths>` },
   { path: 'app/proguard-rules.pro', name: 'proguard-rules.pro', category: 'gradle', description: 'Release shrinker rules.', code: `-keep class com.eonmirth.glim.service.** { *; }
 -keep class com.eonmirth.glim.receiver.** { *; }
 -keep class com.eonmirth.glim.MainActivity { *; }` },
