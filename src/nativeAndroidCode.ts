@@ -180,6 +180,13 @@ object SmartPermissionManager {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    fun hasAudioPermission(context: Context): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun hasNotificationPermission(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -320,7 +327,7 @@ class ClapDetector(private val onClapDetected: () -> Unit) {
     companion object {
         private const val TAG = "ClapDetector"
         private const val SAMPLE_RATE = 22050
-        private const val AMPLITUDE_THRESHOLD = 18000
+        private const val AMPLITUDE_THRESHOLD = 8500
         private const val COOLDOWN_MS = 800L
     }
 
@@ -936,6 +943,7 @@ import com.eonmirth.glim.core.rule.SmartRule
 import com.eonmirth.glim.core.safety.SafetyEngine
 import com.eonmirth.glim.core.sensor.SensorEngine
 import com.eonmirth.glim.core.sensor.SensorEventListenerCallback
+import com.eonmirth.glim.sensor.ClapDetector
 
 /**
  * Continuous Foreground Service keeping accelerometer & proximity listeners alive
@@ -966,6 +974,7 @@ class GlimService : Service(), SensorEventListenerCallback {
     private lateinit var toggleAction: ToggleFlashlightAction
     private lateinit var smartRule: SmartRule
     private lateinit var sensorEngine: SensorEngine
+    private lateinit var clapDetector: ClapDetector
 
     private val autoOffHandler = Handler(Looper.getMainLooper())
     private val autoOffRunnable = Runnable {
@@ -1001,6 +1010,18 @@ class GlimService : Service(), SensorEventListenerCallback {
         sensorEngine = SensorEngine(this, this).apply {
             sensitivityThresholdGForce = preferencesManager.sensitivityGForce
             isPocketProtectionEnabled = preferencesManager.isPocketProtectionEnabled
+        }
+
+        clapDetector = ClapDetector {
+            if (preferencesManager.isClapDetectionEnabled && !isInsidePocket) {
+                Log.i(TAG, "Clap detected! Toggling flashlight.")
+                val result = smartRule.evaluateAndExecute(this, true)
+                if (result is ActionResult.Success) {
+                    vibrateTactileFeedback()
+                    notificationManager.updateNotification(flashlightController.isTorchOn)
+                    manageAutoOffTimer()
+                }
+            }
         }
 
         acquireWakeLock()
@@ -1069,6 +1090,9 @@ class GlimService : Service(), SensorEventListenerCallback {
                 isServiceRunning = true
                 startForeground(NOTIFICATION_ID, notificationManager.buildForegroundNotification(flashlightController.isTorchOn))
                 sensorEngine.startListening()
+                if (preferencesManager.isClapDetectionEnabled && SmartPermissionManager.hasAudioPermission(this)) {
+                    clapDetector.startListening()
+                }
                 ActivityLogManager.log(
                     FeatureId.SHAKE_FLASHLIGHT,
                     "SERVICE_START",
@@ -1176,6 +1200,7 @@ class GlimService : Service(), SensorEventListenerCallback {
         isServiceRunning = false
         autoOffHandler.removeCallbacks(autoOffRunnable)
         sensorEngine.stopListening()
+        clapDetector.stopListening()
         flashlightController.setTorchMode(false)
         flashlightController.release()
 
@@ -1449,6 +1474,18 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val audioPermissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        if (granted) {
+                            preferencesManager.isClapDetectionEnabled = true
+                            Toast.makeText(this@MainActivity, "Clap & Whistle detection enabled!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            preferencesManager.isClapDetectionEnabled = false
+                            Toast.makeText(this@MainActivity, "Microphone permission is required for Clap Detection", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
                     GlimScreen(
                         featureState = featureState,
                         isServiceRunning = isServiceRunning,
@@ -1507,7 +1544,15 @@ class MainActivity : ComponentActivity() {
                         },
                         initialClapDetection = preferencesManager.isClapDetectionEnabled,
                         onToggleClapDetection = { clap ->
-                            preferencesManager.isClapDetectionEnabled = clap
+                            if (clap) {
+                                if (!SmartPermissionManager.hasAudioPermission(this@MainActivity)) {
+                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                } else {
+                                    preferencesManager.isClapDetectionEnabled = true
+                                }
+                            } else {
+                                preferencesManager.isClapDetectionEnabled = false
+                            }
                         },
                         onCheckUpdateManual = {
                             lifecycleScope.launchWhenStarted {
@@ -2121,8 +2166,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
