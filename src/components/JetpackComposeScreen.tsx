@@ -270,16 +270,10 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 />
                 Torch {flashlight.isOn ? 'ON' : 'OFF'}
               </span>
-
-              {settings.clapDetectionEnabled && (
-                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/30 flex items-center gap-1">
-                  <Mic className="h-3 w-3" /> Clap Guard
-                </span>
-              )}
             </div>
 
             <p className="mt-1 text-[11px] text-neutral-500">
-              Shake phone or clap sound to toggle
+              Shake phone to toggle flashlight
             </p>
           </div>
         </div>
@@ -334,73 +328,6 @@ export const JetpackComposeScreen: React.FC<Props> = ({
               />
             </button>
           </div>
-        </div>
-
-        {/* 👏 Clap & Whistle Sound Detection Card */}
-        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                  settings.clapDetectionEnabled
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-neutral-800 text-neutral-400'
-                }`}
-              >
-                <Mic className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-neutral-200">
-                  Clap & Whistle Detection
-                </h3>
-                <p className="text-[11px] text-neutral-400">
-                  Toggle flashlight when a loud clap or whistle is detected
-                </p>
-              </div>
-            </div>
-
-            <button
-              role="switch"
-              aria-checked={settings.clapDetectionEnabled}
-              onClick={() =>
-                onUpdateSettings((prev) => ({
-                  ...prev,
-                  clapDetectionEnabled: !prev.clapDetectionEnabled,
-                }))
-              }
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${
-                settings.clapDetectionEnabled ? 'bg-blue-500' : 'bg-neutral-700'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 mt-1 ${
-                  settings.clapDetectionEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {settings.clapDetectionEnabled && (
-            <div className="rounded-xl bg-neutral-950 p-3 border border-neutral-800 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-neutral-300">
-                <span>Sound Sensor Guard:</span>
-                <span className="text-blue-400 font-semibold flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-blue-400 animate-ping" />
-                  Listening for Claps
-                </span>
-              </div>
-              <p className="text-[10px] text-neutral-400">
-                🔒 <strong>100% On-Device:</strong> Microphone audio is processed in real time to detect sharp sound amplitude peaks. Audio data is never recorded or saved.
-              </p>
-              <button
-                onClick={onToggleTorch}
-                className="w-full py-2 rounded-xl bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/30 hover:bg-blue-500/30 transition flex items-center justify-center gap-1.5"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Simulate Loud Clap Trigger
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Sensitivity & Auto-Off Timer Card */}

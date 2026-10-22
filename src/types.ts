@@ -5,7 +5,6 @@ export interface ShakeSettings {
   hapticFeedback: boolean;
   soundFeedback: boolean;
   autoOffMinutes: number; // 0 for Never, or 1, 3, 5, 10 mins
-  clapDetectionEnabled: boolean; // Clap / Whistle sound trigger
 }
 
 export interface SensorReadout {

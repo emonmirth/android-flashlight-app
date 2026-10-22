@@ -37,7 +37,6 @@ export default function App() {
     hapticFeedback: true,
     soundFeedback: true,
     autoOffMinutes: 3,
-    clapDetectionEnabled: false,
   });
 
   const [sensor, setSensor] = useState<SensorReadout>({
