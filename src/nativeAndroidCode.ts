@@ -1250,6 +1250,7 @@ object UpdateManager {
             Toast.makeText(context, "Downloading update in background...", Toast.LENGTH_SHORT).show()
 
             val onComplete = object : BroadcastReceiver() {
+                private var unregistered = false
                 override fun onReceive(ctxt: Context, intent: Intent) {
                     val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                     if (downloadId == id) {
@@ -1263,7 +1264,10 @@ object UpdateManager {
                                 }
                             }
                             cursor.close()
-                            ctxt.unregisterReceiver(this)
+                            if (!unregistered) {
+                                unregistered = true
+                                ctxt.unregisterReceiver(this)
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Install prompt failed", e)
                         }
