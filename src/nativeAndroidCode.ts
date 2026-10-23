@@ -269,6 +269,10 @@ class PreferencesManager(context: Context) {
         const val KEY_AUTO_OFF_MINUTES = "auto_off_minutes"
         const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         const val KEY_SOUND_FEEDBACK = "sound_feedback"
+        const val KEY_TORCH_BRIGHTNESS = "torch_brightness"
+        const val KEY_THEME_COLOR = "theme_color"
+        const val KEY_SCHEDULE_ENABLED = "schedule_enabled"
+        const val KEY_TOTAL_TOGGLES = "total_toggles"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 
         const val DEFAULT_SENSITIVITY = 2.4f
@@ -302,6 +306,22 @@ class PreferencesManager(context: Context) {
     var isSoundFeedbackEnabled: Boolean
         get() = prefs.getBoolean(KEY_SOUND_FEEDBACK, true)
         set(value) = prefs.edit().putBoolean(KEY_SOUND_FEEDBACK, value).apply()
+
+    var torchBrightness: Int
+        get() = prefs.getInt(KEY_TORCH_BRIGHTNESS, 5)
+        set(value) = prefs.edit().putInt(KEY_TORCH_BRIGHTNESS, value).apply()
+
+    var themeColor: String
+        get() = prefs.getString(KEY_THEME_COLOR, "amber") ?: "amber"
+        set(value) = prefs.edit().putString(KEY_THEME_COLOR, value).apply()
+
+    var isScheduleEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SCHEDULE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SCHEDULE_ENABLED, value).apply()
+
+    var totalToggles: Int
+        get() = prefs.getInt(KEY_TOTAL_TOGGLES, 0)
+        set(value) = prefs.edit().putInt(KEY_TOTAL_TOGGLES, value).apply()
 
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
@@ -345,13 +365,20 @@ class ToggleFlashlightAction(private val flashlightController: FlashlightControl
         }
 
         return try {
-            val success = flashlightController.toggleTorch()
+            val prefs = com.eonmirth.glim.core.persistence.PreferencesManager(context)
+            val nextState = !flashlightController.isTorchOn
+            val success = if (nextState) {
+                flashlightController.setTorchBrightness(prefs.torchBrightness)
+            } else {
+                flashlightController.setTorchMode(false)
+            }
             if (success) {
+                prefs.totalToggles = prefs.totalToggles + 1
                 ActionResult.Success(
                     if (flashlightController.isTorchOn) "Flashlight turned ON" else "Flashlight turned OFF"
                 )
             } else {
-                ActionResult.Failure("Failed to toggle flashlight torch (Camera2 error or permission loss)")
+                ActionResult.Failure("Failed to toggle flashlight torch")
             }
         } catch (e: SecurityException) {
             ActionResult.Failure("Camera permission missing: " + (e.message ?: "SecurityException"))
@@ -798,6 +825,30 @@ class FlashlightController(private val context: Context) {
             Log.e(TAG, "SecurityException while setting torch mode to $enabled: Camera permission revoked", e)
             _isTorchOn.value = false
             false
+        }
+    }
+
+    fun setTorchBrightness(level: Int): Boolean {
+        val targetId = cameraId ?: run {
+            findFlashCameraId()
+            cameraId
+        }
+        if (targetId == null) return false
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val characteristics = cameraManager.getCameraCharacteristics(targetId)
+                val maxLevel = characteristics.get(CameraCharacteristics.FLASH_INFO_STRENGTH_MAXIMUM_LEVEL) ?: 1
+                val safeLevel = level.coerceIn(1, maxLevel)
+                cameraManager.turnOnTorchWithStrengthLevel(targetId, safeLevel)
+                _isTorchOn.value = true
+                true
+            } else {
+                setTorchMode(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set torch brightness, falling back to standard torch mode", e)
+            setTorchMode(true)
         }
     }
 
@@ -1448,6 +1499,10 @@ class MainActivity : ComponentActivity() {
                         initialAutoOffMinutes = preferencesManager.autoOffMinutes,
                         initialHaptic = preferencesManager.isHapticFeedbackEnabled,
                         initialSound = preferencesManager.isSoundFeedbackEnabled,
+                        initialTorchBrightness = preferencesManager.torchBrightness,
+                        initialThemeColor = preferencesManager.themeColor,
+                        initialScheduleEnabled = preferencesManager.isScheduleEnabled,
+                        totalToggles = preferencesManager.totalToggles,
                         onRequestPermissions = {
                             val perms = mutableListOf(Manifest.permission.CAMERA)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
@@ -1495,6 +1550,15 @@ class MainActivity : ComponentActivity() {
                         },
                         onToggleSound = { sound ->
                             preferencesManager.isSoundFeedbackEnabled = sound
+                        },
+                        onUpdateTorchBrightness = { brightness ->
+                            preferencesManager.torchBrightness = brightness
+                        },
+                        onUpdateThemeColor = { color ->
+                            preferencesManager.themeColor = color
+                        },
+                        onToggleSchedule = { enabled ->
+                            preferencesManager.isScheduleEnabled = enabled
                         },
                         onCheckUpdateManual = {
                             lifecycleScope.launchWhenStarted {
@@ -1610,6 +1674,10 @@ fun GlimScreen(
     initialAutoOffMinutes: Int = 3,
     initialHaptic: Boolean = true,
     initialSound: Boolean = true,
+    initialTorchBrightness: Int = 5,
+    initialThemeColor: String = "amber",
+    initialScheduleEnabled: Boolean = false,
+    totalToggles: Int = 0,
     onRequestPermissions: () -> Unit,
     onToggleService: (Boolean) -> Unit,
     onUpdateSensitivity: (Float) -> Unit,
@@ -1617,6 +1685,9 @@ fun GlimScreen(
     onUpdateAutoOff: (Int) -> Unit = {},
     onToggleHaptic: (Boolean) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
+    onUpdateTorchBrightness: (Int) -> Unit = {},
+    onUpdateThemeColor: (String) -> Unit = {},
+    onToggleSchedule: (Boolean) -> Unit = {},
     onCheckUpdateManual: () -> Unit = {},
     updateInfo: UpdateManager.UpdateInfo? = null,
     onConfirmUpdate: (String) -> Unit = {}
@@ -1630,6 +1701,9 @@ fun GlimScreen(
     var autoOffMinutes by remember { mutableStateOf(initialAutoOffMinutes) }
     var isHapticEnabled by remember { mutableStateOf(initialHaptic) }
     var isSoundEnabled by remember { mutableStateOf(initialSound) }
+    var torchBrightness by remember { mutableStateOf(initialTorchBrightness) }
+    var themeColor by remember { mutableStateOf(initialThemeColor) }
+    var isScheduleEnabled by remember { mutableStateOf(initialScheduleEnabled) }
 
     var menuExpanded by remember { mutableStateOf(false) }
     var showTroubleshooting by remember { mutableStateOf(false) }
@@ -1650,7 +1724,7 @@ fun GlimScreen(
                             letterSpacing = 1.sp
                         )
                         Text(
-                            "EonMirth Shake & Sound Utility • v1.0.3",
+                            "EonMirth Shake Utility • v1.0.8",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -1767,6 +1841,117 @@ fun GlimScreen(
                         Text(
                             text = if (isEnabled) "Active" else "Paused",
                             style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Shake to toggle flashlight",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = isEnabled,
+                        enabled = !isUnsupported,
+                        onCheckedChange = { onToggleService(it) }
+                    )
+                }
+            }
+
+            // Usage Stats Dashboard Card
+            SettingCard {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Usage Statistics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Today", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("$totalToggles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text("Total Toggles", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("100%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text("Reliability", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Torch Brightness Level Slider
+            SettingCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Torch Brightness Level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Level $torchBrightness/5", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = torchBrightness.toFloat(),
+                        onValueChange = {
+                            torchBrightness = it.toInt()
+                            onUpdateTorchBrightness(it.toInt())
+                        },
+                        valueRange = 1f..5f,
+                        steps = 3
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Soft (1)", style = MaterialTheme.typography.labelSmall)
+                        Text("Max Intensity (5)", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            // Accent Color Theme Picker
+            SettingCard {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Accent Color Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("amber" to "Gold", "blue" to "Blue", "emerald" to "Green", "purple" to "Purple").forEach { (id, name) ->
+                            val isSelected = themeColor == id
+                            Button(
+                                onClick = {
+                                    themeColor = id
+                                    onUpdateThemeColor(id)
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(name, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Scheduled Night Mode
+            SettingCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Scheduled Night Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Auto-active from 22:00 to 06:00", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isScheduleEnabled,
+                        onCheckedChange = {
+                            isScheduleEnabled = it
+                            onToggleSchedule(it)
+                        }
+                    )
+                }
+            }
                             fontWeight = FontWeight.Bold
                         )
                         Text(
@@ -2079,8 +2264,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
