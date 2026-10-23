@@ -712,6 +712,7 @@ import android.content.Context
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1952,23 +1953,6 @@ fun GlimScreen(
                     )
                 }
             }
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Shake to toggle flashlight",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Switch(
-                        checked = isEnabled,
-                        enabled = !isUnsupported,
-                        onCheckedChange = { onToggleService(it) }
-                    )
-                }
-            }
-
             // Settings Section
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -1980,10 +1964,6 @@ fun GlimScreen(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp)
                 )
-
-
-
-                // Sensitivity
                 SettingCard {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2264,8 +2244,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "1.0.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
