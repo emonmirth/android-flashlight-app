@@ -1932,127 +1932,6 @@ fun GlimScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
             )
-            // Settings Section
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    "Settings & Features",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-                SettingCard {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Vibration, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Shake Sensitivity", style = MaterialTheme.typography.titleMedium)
-                        }
-                        Slider(
-                            value = sensitivitySlider,
-                            onValueChange = { sensitivitySlider = it; onUpdateSensitivity(it) },
-                            valueRange = 1.4f..3.8f,
-                            steps = 11
-                        )
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Light", style = MaterialTheme.typography.labelSmall)
-                            Text(String.format("%.1f G", sensitivitySlider), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            Text("Firm", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-
-                // Auto-off Timer
-                SettingCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Auto-off Timer", style = MaterialTheme.typography.titleMedium)
-                        }
-
-                        var expanded by remember { mutableStateOf(false) }
-                        Box {
-                            TextButton(onClick = { expanded = true }) {
-                                Text(if (autoOffMinutes > 0) "$autoOffMinutes min" else "Never")
-                            }
-                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                listOf(1, 3, 5, 10, 0).forEach { mins ->
-                                    DropdownMenuItem(
-                                        text = { Text(if (mins > 0) "$mins minutes" else "Never") },
-                                        onClick = {
-                                            autoOffMinutes = mins
-                                            onUpdateAutoOff(mins)
-                                            expanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Feedback Toggles
-                SettingCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.VolumeUp, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Sound", style = MaterialTheme.typography.bodyMedium)
-                            Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it; onToggleSound(it) })
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Vibration, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Vibration", style = MaterialTheme.typography.bodyMedium)
-                            Checkbox(checked = isHapticEnabled, onCheckedChange = { isHapticEnabled = it; onToggleHaptic(it) })
-                        }
-                    }
-                }
-
-                // Pocket Protection
-                SettingCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Security, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("Pocket Protection", style = MaterialTheme.typography.titleMedium)
-                                Text("Avoid accidental activation in bag/pocket", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Switch(checked = isPocketProtectionEnabled, onCheckedChange = { isPocketProtectionEnabled = it; onTogglePocketProtection(it) })
-                    }
-                }
-            }
-
-            // EonMirth Brand Attribution
-            Text(
-                "Official EonMirth Product • https://eonmirth-web.vercel.app/",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-            )
 
             // Dialogs
             if (showTroubleshooting) {
@@ -2223,8 +2102,8 @@ android {
         applicationId = "com.eonmirth.glim"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.0.10"
+        versionCode = 12
+        versionName = "1.0.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
