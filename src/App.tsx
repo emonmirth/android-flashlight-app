@@ -37,12 +37,6 @@ export default function App() {
     hapticFeedback: true,
     soundFeedback: true,
     autoOffMinutes: 3,
-    torchBrightness: 5,
-    themeColor: 'amber',
-    scheduleEnabled: false,
-    scheduleStartHour: 22,
-    scheduleEndHour: 6,
-    totalToggles: 0,
   });
 
   const [sensor, setSensor] = useState<SensorReadout>({
@@ -91,8 +85,6 @@ export default function App() {
 
     // Call hardware manager
     const result = await hardwareManager.setTorch(nextState);
-
-    setSettings((prev) => ({ ...prev, totalToggles: prev.totalToggles + 1 }));
 
     setFlashlight((prev) => ({
       ...prev,

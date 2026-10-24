@@ -17,17 +17,9 @@ import {
   Vibrate,
   BatteryCharging,
   Grid,
-  CheckCircle2,
-  AlertTriangle,
-  Github,
-  HelpCircle,
   Lock,
   ExternalLink,
   FileText,
-  Sun,
-  Palette,
-  BarChart3,
-  Moon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShakeSettings, SensorReadout, ProximityState, FlashlightState } from '../types';
@@ -78,28 +70,19 @@ export const JetpackComposeScreen: React.FC<Props> = ({
     }, 800);
   };
 
-  const getThemeColorClass = () => {
-    switch (settings.themeColor) {
-      case 'blue': return 'text-blue-400 bg-blue-500/20';
-      case 'emerald': return 'text-emerald-400 bg-emerald-500/20';
-      case 'purple': return 'text-purple-400 bg-purple-500/20';
-      default: return 'text-amber-400 bg-amber-500/20';
-    }
-  };
-
   return (
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-100 overflow-y-auto pb-12 select-none relative">
       {/* TopAppBar */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-neutral-900 bg-neutral-950/95 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-xl border border-amber-500/30 ${getThemeColorClass()}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
             <Zap className="h-4 w-4 fill-current" />
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight text-neutral-100 flex items-center gap-1.5">
               Glim
               <span className="text-[10px] font-semibold text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/20">
-                v1.0.8
+                v1.0.10
               </span>
             </h1>
             <p className="text-[10px] text-neutral-400">EonMirth Shake Utility</p>
@@ -272,113 +255,7 @@ export const JetpackComposeScreen: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 📊 Feature 3: Usage Stats Dashboard Card */}
-        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-amber-400" />
-              <h3 className="text-sm font-semibold text-neutral-200">Usage Statistics</h3>
-            </div>
-            <span className="text-[11px] text-neutral-400 font-mono">Today</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <div className="rounded-xl bg-neutral-950 p-3 border border-neutral-800 text-center">
-              <span className="text-lg font-bold text-amber-400">{settings.totalToggles}</span>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Total Flash Toggles</p>
-            </div>
-            <div className="rounded-xl bg-neutral-950 p-3 border border-neutral-800 text-center">
-              <span className="text-lg font-bold text-emerald-400">100%</span>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Reliability Score</p>
-            </div>
-          </div>
-        </div>
-
-        {/* 🔦 Feature 1: Torch Brightness Control Card */}
-        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sun className="h-4 w-4 text-amber-400" />
-              <h3 className="text-sm font-semibold text-neutral-200">Torch Brightness Level</h3>
-            </div>
-            <span className="font-mono text-xs font-bold text-amber-400">Level {settings.torchBrightness}/5</span>
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={5}
-            step={1}
-            value={settings.torchBrightness}
-            onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
-              onUpdateSettings((prev) => ({ ...prev, torchBrightness: val }));
-            }}
-            className="w-full accent-amber-400 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
-          />
-          <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
-            <span>Level 1 (Soft)</span>
-            <span>Level 5 (Max Intensity)</span>
-          </div>
-        </div>
-
-        {/* 🎨 Feature 2: Custom Material 3 Color Themes */}
-        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Palette className="h-4 w-4 text-amber-400" />
-              <h3 className="text-sm font-semibold text-neutral-200">Accent Color Theme</h3>
-            </div>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { id: 'amber', name: 'Gold', color: 'bg-amber-400' },
-              { id: 'blue', name: 'Blue', color: 'bg-blue-500' },
-              { id: 'emerald', name: 'Green', color: 'bg-emerald-500' },
-              { id: 'purple', name: 'Purple', color: 'bg-purple-500' },
-            ].map((theme) => (
-              <button
-                key={theme.id}
-                onClick={() => onUpdateSettings((prev) => ({ ...prev, themeColor: theme.id as any }))}
-                className={`flex flex-col items-center justify-center rounded-xl p-2.5 border transition gap-1.5 ${settings.themeColor === theme.id ? 'bg-neutral-800 border-amber-400 text-white' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:bg-neutral-900'}`}
-              >
-                <span className={`h-4 w-4 rounded-full ${theme.color} ring-2 ring-neutral-950`} />
-                <span className="text-[11px] font-medium">{theme.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 🌙 Feature 4: Scheduled Night Mode */}
-        <div className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/20 text-purple-400">
-                <Moon className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-neutral-200">Scheduled Night Mode</h3>
-                <p className="text-[11px] text-neutral-400">Auto-activate during sleeping hours</p>
-              </div>
-            </div>
-
-            <button
-              role="switch"
-              aria-checked={settings.scheduleEnabled}
-              onClick={() => onUpdateSettings((prev) => ({ ...prev, scheduleEnabled: !prev.scheduleEnabled }))}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${settings.scheduleEnabled ? 'bg-purple-500' : 'bg-neutral-700'}`}
-            >
-              <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 mt-1 ${settings.scheduleEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
-
-          {settings.scheduleEnabled && (
-            <div className="rounded-xl bg-neutral-950 p-3 border border-neutral-800 flex items-center justify-between text-xs text-neutral-300">
-              <span>Active Window:</span>
-              <span className="font-mono font-bold text-purple-400">22:00 (10 PM) – 06:00 (6 AM)</span>
-            </div>
-          )}
-        </div>
-
-        {/* Sensitivity Adjustment Card */}
+        {/* Sensitivity & Auto-Off Timer Card */}
         <div id="sensitivity-card" className="rounded-2xl bg-neutral-900/80 p-4 border border-neutral-800/80 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -497,11 +374,11 @@ export const JetpackComposeScreen: React.FC<Props> = ({
               <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs">
                 <div className="flex justify-between text-neutral-300 font-medium">
                   <span>Current Installed:</span>
-                  <span className="font-mono text-neutral-400">v1.0.8 (Build 9)</span>
+                  <span className="font-mono text-neutral-400">v1.0.10 (Build 11)</span>
                 </div>
                 <div className="flex justify-between text-amber-300 font-semibold">
                   <span>Remote Version:</span>
-                  <span className="font-mono text-amber-400">v1.0.8 (Up to Date)</span>
+                  <span className="font-mono text-amber-400">v1.0.10 (Up to Date)</span>
                 </div>
                 <p className="text-[11px] text-neutral-400 pt-1 border-t border-neutral-800">✅ You are running the latest version of Glim.</p>
               </div>
@@ -598,7 +475,7 @@ export const JetpackComposeScreen: React.FC<Props> = ({
                 <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400"><Zap className="h-6 w-6 fill-current" /></div>
                 <div>
                   <h3 className="text-base font-bold text-neutral-100">Glim • Shake Utility</h3>
-                  <p className="text-xs text-neutral-400">Version 1.0.8 (Build 9) • EonMirth</p>
+                  <p className="text-xs text-neutral-400">Version 1.0.10 (Build 11) • EonMirth</p>
                 </div>
               </div>
               <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-1.5 text-xs text-neutral-300">

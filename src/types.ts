@@ -5,12 +5,6 @@ export interface ShakeSettings {
   hapticFeedback: boolean;
   soundFeedback: boolean;
   autoOffMinutes: number; // 0 for Never, or 1, 3, 5, 10 mins
-  torchBrightness: number; // 1 to 5 (max)
-  themeColor: 'amber' | 'blue' | 'emerald' | 'purple';
-  scheduleEnabled: boolean;
-  scheduleStartHour: number; // e.g. 22
-  scheduleEndHour: number; // e.g. 6
-  totalToggles: number;
 }
 
 export interface SensorReadout {
